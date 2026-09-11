@@ -548,13 +548,19 @@ app.get("/api/seed-demo", async (req, res) => {
             await pool.query(`
                 INSERT INTO job_demand
                 (company, role, sector, openings, district, source)
-                SELECT $1, $2, $3, $4, $5, 'Demo job-market dataset'
+                SELECT
+                    $1::VARCHAR,
+                    $2::VARCHAR,
+                    $3::VARCHAR,
+                    $4::INTEGER,
+                    $5::VARCHAR,
+                    'Demo job-market dataset'
                 WHERE NOT EXISTS (
                     SELECT 1
                     FROM job_demand
-                    WHERE company = $1
-                    AND role = $2
-                    AND district = $5
+                    WHERE company = $1::VARCHAR
+                    AND role = $2::VARCHAR
+                    AND district = $5::VARCHAR
                 )
             `, demand);
 
