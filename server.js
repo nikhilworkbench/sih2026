@@ -1,3 +1,12 @@
+const { Pool } = require("pg");
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === "production"
+    ? { rejectUnauthorized: false }
+    : false
+});
+
 const express = require("express");
 const path = require("path");
 require("dotenv").config();
@@ -63,6 +72,25 @@ app.get("/api/health", (req, res) => {
         template: TEMPLATE_NAME
     });
 
+});
+
+app.get("/api/db-test", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT NOW() AS current_time");
+
+    res.json({
+      success: true,
+      message: "PostgreSQL connected successfully",
+      time: result.rows[0].current_time
+    });
+  } catch (error) {
+    console.error("Database connection error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Database connection failed"
+    });
+  }
 });
 
 
