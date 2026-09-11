@@ -1294,345 +1294,485 @@
     <!-- APPLICATION SCRIPT -->
     <!-- ========================================================= -->
 
-    <script>
+    ```html
+<script>
 
-        function unifiedApp() {
+    function unifiedApp() {
+
+        return {
+
+            /* =====================================================
+               BASIC STATE
+            ===================================================== */
+
+            activeTab: 'whatsapp',
+
+            district: 'All Maharashtra',
+
+            scheme: 'Scheme: All Schemes',
+
+            manualReplyText: '',
+
+            isSending: false,
+
+            backendUrl: '',
+
+
+            /* =====================================================
+               FORMS
+            ===================================================== */
+
+            surveyForm: {
+
+                phone: '919876543210',
+
+                name: 'Rahul Patil',
+
+                sector: 'Automotive & EV',
+
+                course: 'CNC Machine Operator'
+
+            },
+
+
+            employerForm: {
+
+                company: 'Tata Motors Auto Solutions',
+
+                role: '',
+
+                openings: '',
+
+                district: 'Pune / Pimpri-Chinchwad'
+
+            },
+
+
+            submittedDemands: [],
+
+
+            /* =====================================================
+               GOVERNMENT METRICS
+            ===================================================== */
+
+            metrics: {
+
+                total: '0',
+
+                placement: '0%',
+
+                wage: '₹0',
+
+                score: '0/100'
+
+            },
+
+
+            verificationData: [],
+
+            demandData: [],
+
+            supplyData: [],
+
+
+            /* =====================================================
+               DEMO / WHATSAPP RESPONSES
+            ===================================================== */
+
+            responses: [
+
+                {
+                    id: 'demo_1',
+                    phone: '919822334455',
+                    text: 'Working at Force Motors as CNC Operator. Salary ₹19,200.',
+                    timestamp: '09:42 AM',
+                    verified: true
+                },
+
+                {
+                    id: 'demo_2',
+                    phone: '919421112233',
+                    text: 'Self-employed: Set up EV 2-Wheeler repair shop in Chinchwad.',
+                    timestamp: '10:15 AM',
+                    verified: true
+                },
+
+                {
+                    id: 'demo_3',
+                    phone: '919923445566',
+                    text: 'Completed course but still searching for local job near Pune.',
+                    timestamp: '11:05 AM',
+                    verified: false
+                }
+
+            ],
+
+
+            /* =====================================================
+               JOB SECTOR DATA
+            ===================================================== */
+
+            sectorData: [
+
+                {
+                    name: 'Automotive & EV',
+                    icon: 'fa-solid fa-car-battery',
+                    colorBg: 'bg-blue-600',
+                    demand: 18500,
+                    supply: 12000,
+                    gap: 6500,
+                    medianWage: 18500,
+                    retention: 79,
+                    topRole: 'Battery Pack Technician'
+                },
+
+                {
+                    name: 'IT & AI Services',
+                    icon: 'fa-solid fa-microchip',
+                    colorBg: 'bg-indigo-600',
+                    demand: 24000,
+                    supply: 27000,
+                    gap: -3000,
+                    medianWage: 23000,
+                    retention: 84,
+                    topRole: 'Junior Cloud Assistant'
+                },
+
+                {
+                    name: 'Solar & Green Energy',
+                    icon: 'fa-solid fa-solar-panel',
+                    colorBg: 'bg-emerald-600',
+                    demand: 14000,
+                    supply: 5500,
+                    gap: 8500,
+                    medianWage: 16800,
+                    retention: 76,
+                    topRole: 'Rooftop PV Installer'
+                },
+
+                {
+                    name: 'Healthcare & Nursing',
+                    icon: 'fa-solid fa-heart-pulse',
+                    colorBg: 'bg-rose-600',
+                    demand: 19500,
+                    supply: 11000,
+                    gap: 8500,
+                    medianWage: 17200,
+                    retention: 88,
+                    topRole: 'Emergency Medical Aide'
+                },
+
+                {
+                    name: 'Semiconductors & PCB',
+                    icon: 'fa-solid fa-memory',
+                    colorBg: 'bg-amber-600',
+                    demand: 8500,
+                    supply: 2200,
+                    gap: 6300,
+                    medianWage: 21500,
+                    retention: 82,
+                    topRole: 'SMT Operator'
+                },
+
+                {
+                    name: 'Modern Construction',
+                    icon: 'fa-solid fa-trowel-bricks',
+                    colorBg: 'bg-slate-600',
+                    demand: 12000,
+                    supply: 14500,
+                    gap: -2500,
+                    medianWage: 14000,
+                    retention: 62,
+                    topRole: 'Pre-cast Concrete Mason'
+                }
+
+            ],
+
+
+            /* =====================================================
+               INITIALIZATION
+            ===================================================== */
+
+            init() {
+
+                this.loadGovernmentMetrics();
+
+                this.initCharts();
+
+                this.fetchRemoteResponses();
+
+                setInterval(() => {
+
+                    this.fetchRemoteResponses();
+
+                }, 3000);
+
+            },
+
+
+            /* =====================================================
+               LOAD GOVERNMENT METRICS FROM POSTGRESQL
+            ===================================================== */
 
             async loadGovernmentMetrics() {
-    try {
-        const district = this.govDistrict || "All Maharashtra";
-        const scheme = this.govScheme || "All Schemes";
 
-        const response = await fetch(
-            `/api/government-metrics?district=${encodeURIComponent(district)}&scheme=${encodeURIComponent(scheme)}`
-        );
+                try {
 
-        const data = await response.json();
-
-        if (!data.success) {
-            console.error("Government metrics error:", data.error);
-            return;
-        }
-
-        // Main KPI cards
-        this.govMetrics.total = data.metrics.total.toLocaleString("en-IN");
-        this.govMetrics.placementRate = data.metrics.placementRate + "%";
-        this.govMetrics.avgSalary =
-            "₹" + data.metrics.avgSalary.toLocaleString("en-IN");
-        this.govMetrics.skillScore = data.metrics.skillScore + "/100";
-
-        // Verification chart
-        this.verificationData = data.verification;
-
-        // Demand vs supply
-        this.demandData = data.demand;
-        this.supplyData = data.supply;
-
-    } catch (error) {
-        console.error("Failed to load government metrics:", error);
-    }
-}
-
-            return {
-
-                govMetrics: {
-    total: "0",
-    placementRate: "0%",
-    avgSalary: "₹0",
-    skillScore: "0/100"
-},
-
-verificationData: [],
-demandData: [],
-supplyData: [],
-
-                activeTab: 'whatsapp',
-
-                district: 'All Maharashtra',
-
-                scheme: 'Scheme: All Schemes',
-
-                manualReplyText: '',
-
-                isSending: false,
+                    const district =
+                        this.district || 'All Maharashtra';
 
 
-                /*
-                 * IMPORTANT:
-                 *
-                 * When running through Node/Express:
-                 *
-                 * http://localhost:5000
-                 *
-                 * When deployed:
-                 * change this to your backend URL.
-                 */
-
-                backendUrl: '',
+                    let scheme =
+                        this.scheme || 'All Schemes';
 
 
-                surveyForm: {
+                    /* Convert UI scheme names to database names */
 
-                    phone: '919876543210',
+                    if (
+                        scheme === 'Scheme: All Schemes'
+                    ) {
 
-                    name: 'Rahul Patil',
+                        scheme = 'All Schemes';
 
-                    sector: 'Automotive & EV',
-
-                    course: 'CNC Machine Operator'
-
-                },
-
-
-                employerForm: {
-
-                    company: 'Tata Motors Auto Solutions',
-
-                    role: '',
-
-                    openings: '',
-
-                    district: 'Pune / Pimpri-Chinchwad'
-
-                },
-
-
-                submittedDemands: [],
-
-
-                metrics: {
-
-                    total: '1,24,500',
-
-                    placement: '68.4%',
-
-                    wage: '₹16,450',
-
-                    score: '74/100'
-
-                },
-
-
-                responses: [
-
-                    {
-                        id: 'demo_1',
-                        phone: '919822334455',
-                        text: 'Working at Force Motors as CNC Operator. Salary ₹19,200.',
-                        timestamp: '09:42 AM',
-                        verified: true
-                    },
-
-                    {
-                        id: 'demo_2',
-                        phone: '919421112233',
-                        text: 'Self-employed: Set up EV 2-Wheeler repair shop in Chinchwad.',
-                        timestamp: '10:15 AM',
-                        verified: true
-                    },
-
-                    {
-                        id: 'demo_3',
-                        phone: '919923445566',
-                        text: 'Completed course but still searching for local job near Pune.',
-                        timestamp: '11:05 AM',
-                        verified: false
                     }
 
-                ],
+                    else if (
+                        scheme === 'MSSDS (State Mission)'
+                    ) {
 
+                        scheme = 'PMKUVA';
 
-                sectorData: [
-
-                    {
-                        name: 'Automotive & EV',
-                        icon: 'fa-solid fa-car-battery',
-                        colorBg: 'bg-blue-600',
-                        demand: 18500,
-                        supply: 12000,
-                        gap: 6500,
-                        medianWage: 18500,
-                        retention: 79,
-                        topRole: 'Battery Pack Technician'
-                    },
-
-                    {
-                        name: 'IT & AI Services',
-                        icon: 'fa-solid fa-microchip',
-                        colorBg: 'bg-indigo-600',
-                        demand: 24000,
-                        supply: 27000,
-                        gap: -3000,
-                        medianWage: 23000,
-                        retention: 84,
-                        topRole: 'Junior Cloud Assistant'
-                    },
-
-                    {
-                        name: 'Solar & Green Energy',
-                        icon: 'fa-solid fa-solar-panel',
-                        colorBg: 'bg-emerald-600',
-                        demand: 14000,
-                        supply: 5500,
-                        gap: 8500,
-                        medianWage: 16800,
-                        retention: 76,
-                        topRole: 'Rooftop PV Installer'
-                    },
-
-                    {
-                        name: 'Healthcare & Nursing',
-                        icon: 'fa-solid fa-heart-pulse',
-                        colorBg: 'bg-rose-600',
-                        demand: 19500,
-                        supply: 11000,
-                        gap: 8500,
-                        medianWage: 17200,
-                        retention: 88,
-                        topRole: 'Emergency Medical Aide'
-                    },
-
-                    {
-                        name: 'Semiconductors & PCB',
-                        icon: 'fa-solid fa-memory',
-                        colorBg: 'bg-amber-600',
-                        demand: 8500,
-                        supply: 2200,
-                        gap: 6300,
-                        medianWage: 21500,
-                        retention: 82,
-                        topRole: 'SMT Operator'
-                    },
-
-                    {
-                        name: 'Modern Construction',
-                        icon: 'fa-solid fa-trowel-bricks',
-                        colorBg: 'bg-slate-600',
-                        demand: 12000,
-                        supply: 14500,
-                        gap: -2500,
-                        medianWage: 14000,
-                        retention: 62,
-                        topRole: 'Pre-cast Concrete Mason'
                     }
 
-                ],
+                    else if (
+                        scheme === 'PMKVY 4.0'
+                    ) {
+
+                        scheme = 'PMKVY';
+
+                    }
+
+                    else if (
+                        scheme === 'Apprenticeship Scheme'
+                    ) {
+
+                        scheme = 'SANKALP';
+
+                    }
 
 
-                /* =====================================================
-                   INITIALIZE APPLICATION
-                ===================================================== */
+                    const response = await fetch(
 
-                init() {
+                        `${this.backendUrl}/api/government-metrics` +
+                        `?district=${encodeURIComponent(district)}` +
+                        `&scheme=${encodeURIComponent(scheme)}`
 
-                    this.loadGovernmentMetrics();
-
-                    this.initCharts();
+                    );
 
 
-                    /*
-                     * Poll backend every 3 seconds.
-                     *
-                     * This will work after your server.js
-                     * has an /api/responses endpoint.
-                     */
+                    if (!response.ok) {
 
-                    setInterval(() => {
-
-                        this.fetchRemoteResponses();
-
-                    }, 3000);
-
-                },
-
-
-                /* =====================================================
-                   SEND AUTOMATED WHATSAPP SURVEY
-                ===================================================== */
-
-                async dispatchSurvey() {
-
-                    this.isSending = true;
-
-
-                    try {
-
-                        const res = await fetch(
-                            `${this.backendUrl}/api/send-survey`,
-                            {
-
-                                method: 'POST',
-
-                                headers: {
-                                    'Content-Type': 'application/json'
-                                },
-
-                                body: JSON.stringify(
-                                    this.surveyForm
-                                )
-
-                            }
+                        throw new Error(
+                            `HTTP ${response.status}`
                         );
 
-
-                        const data = await res.json()
-                            .catch(() => ({}));
+                    }
 
 
-                        if (res.ok && data.success) {
+                    const data =
+                        await response.json();
 
-                            alert(
-                                'WhatsApp survey sent successfully!'
-                            );
 
-                        } else {
+                    if (!data.success) {
 
-                            const errorMessage =
-                                data.error ||
-                                'WhatsApp API request failed.';
+                        console.error(
+                            'Government metrics error:',
+                            data.error
+                        );
 
-                            alert(
-                                'WhatsApp sending failed:\n\n' +
-                                errorMessage +
-                                '\n\nUse "Or Open via Web WhatsApp" for manual sending.'
-                            );
+                        return;
+
+                    }
+
+
+                    /* =================================================
+                       UPDATE EXISTING KPI CARDS
+                    ================================================= */
+
+                    this.metrics.total =
+                        Number(
+                            data.metrics.total || 0
+                        ).toLocaleString('en-IN');
+
+
+                    this.metrics.placement =
+                        Number(
+                            data.metrics.placementRate || 0
+                        ) + '%';
+
+
+                    this.metrics.wage =
+                        '₹' +
+                        Number(
+                            data.metrics.avgSalary || 0
+                        ).toLocaleString('en-IN');
+
+
+                    this.metrics.score =
+                        Number(
+                            data.metrics.skillScore || 0
+                        ) + '/100';
+
+
+                    /* =================================================
+                       STORE CHART DATA
+                    ================================================= */
+
+                    this.verificationData =
+                        Array.isArray(data.verification)
+                            ? data.verification
+                            : [];
+
+
+                    this.demandData =
+                        Array.isArray(data.demand)
+                            ? data.demand
+                            : [];
+
+
+                    this.supplyData =
+                        Array.isArray(data.supply)
+                            ? data.supply
+                            : [];
+
+
+                    /* Update charts if already created */
+
+                    this.updateGovernmentCharts();
+
+                }
+
+                catch (error) {
+
+                    console.error(
+                        'Failed to load government metrics:',
+                        error
+                    );
+
+                }
+
+            },
+
+
+            /* =====================================================
+               SEND WHATSAPP SURVEY
+            ===================================================== */
+
+            async dispatchSurvey() {
+
+                this.isSending = true;
+
+
+                try {
+
+                    const res = await fetch(
+
+                        `${this.backendUrl}/api/send-survey`,
+
+                        {
+
+                            method: 'POST',
+
+                            headers: {
+
+                                'Content-Type':
+                                    'application/json'
+
+                            },
+
+                            body: JSON.stringify(
+                                this.surveyForm
+                            )
 
                         }
 
-                    } catch (error) {
+                    );
 
-                        console.error(
-                            'WhatsApp API error:',
-                            error
-                        );
 
+                    const data =
+                        await res.json()
+                            .catch(() => ({}));
+
+
+                    if (
+                        res.ok &&
+                        data.success
+                    ) {
 
                         alert(
-                            'Backend server is not reachable.\n\n' +
-                            'Make sure your Node.js server is running.'
+                            'WhatsApp survey sent successfully!'
                         );
-
-                    } finally {
-
-                        this.isSending = false;
 
                     }
 
-                },
+                    else {
+
+                        const errorMessage =
+                            data.error ||
+                            'WhatsApp API request failed.';
 
 
-                /* =====================================================
-                   MANUAL WHATSAPP WEB LINK
-                ===================================================== */
+                        alert(
 
-                launchWhatsAppDirectLink() {
+                            'WhatsApp sending failed:\n\n' +
+                            errorMessage +
+                            '\n\nUse "Or Open via Web WhatsApp" for manual sending.'
 
-                    const cleanPhone =
-                        this.surveyForm.phone
-                            .replace(/[^0-9]/g, '');
+                        );
+
+                    }
+
+                }
+
+                catch (error) {
+
+                    console.error(
+                        'WhatsApp API error:',
+                        error
+                    );
 
 
-                    const message = encodeURIComponent(
+                    alert(
+
+                        'Backend server is not reachable.\n\n' +
+                        'Make sure your Node.js server is running.'
+
+                    );
+
+                }
+
+                finally {
+
+                    this.isSending = false;
+
+                }
+
+            },
+
+
+            /* =====================================================
+               OPEN WHATSAPP WEB
+            ===================================================== */
+
+            launchWhatsAppDirectLink() {
+
+                const cleanPhone =
+                    this.surveyForm.phone
+                        .replace(/[^0-9]/g, '');
+
+
+                const message =
+                    encodeURIComponent(
 
                         `Namaskar ${this.surveyForm.name}!
 
@@ -1652,282 +1792,246 @@ Please reply to update your record.`
                     );
 
 
-                    window.open(
-                        `https://wa.me/${cleanPhone}?text=${message}`,
-                        '_blank'
+                window.open(
+
+                    `https://wa.me/${cleanPhone}?text=${message}`,
+
+                    '_blank'
+
+                );
+
+            },
+
+
+            /* =====================================================
+               FETCH WEBHOOK RESPONSES
+            ===================================================== */
+
+            async fetchRemoteResponses() {
+
+                try {
+
+                    const res = await fetch(
+
+                        `${this.backendUrl}/api/responses`
+
                     );
 
-                },
 
-
-                /* =====================================================
-                   FETCH REAL WEBHOOK RESPONSES
-                ===================================================== */
-
-                async fetchRemoteResponses() {
-
-                    try {
-
-                        const res = await fetch(
-                            `${this.backendUrl}/api/responses`
-                        );
-
-
-                        if (!res.ok) {
-                            return;
-                        }
-
-
-                        const data = await res.json();
-
-
-                        if (!Array.isArray(data)) {
-                            return;
-                        }
-
-
-                        data.forEach(remoteItem => {
-
-                            const exists =
-                                this.responses.some(
-                                    r =>
-                                        r.id &&
-                                        remoteItem.id &&
-                                        r.id === remoteItem.id
-                                );
-
-
-                            if (!exists) {
-
-                                this.responses.unshift(
-                                    remoteItem
-                                );
-
-                            }
-
-                        });
-
-                    } catch (err) {
-
-                        /*
-                         * Backend may not be running during
-                         * a local/demo-only session.
-                         */
-
-                    }
-
-                },
-
-
-                /* =====================================================
-                   MANUAL RESPONSE
-                ===================================================== */
-
-                submitManualResponse(isEmployed) {
-
-                    if (!this.manualReplyText.trim()) {
-
-                        alert(
-                            'Please type or paste the response message first.'
-                        );
+                    if (!res.ok) {
 
                         return;
 
                     }
 
 
-                    this.responses.unshift({
-
-                        id: 'man_' + Date.now(),
-
-                        phone: this.surveyForm.phone,
-
-                        text: this.manualReplyText,
-
-                        timestamp:
-                            new Date().toLocaleTimeString(
-                                [],
-                                {
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                }
-                            ),
-
-                        verified: isEmployed
-
-                    });
+                    const data =
+                        await res.json();
 
 
-                    this.manualReplyText = '';
-
-                },
-
-
-                /* =====================================================
-                   DEMO INBOUND RESPONSE
-                ===================================================== */
-
-                simulateInbound(text) {
-
-                    const randomSuffix =
-                        Math.floor(
-                            1000 +
-                            Math.random() * 9000
-                        );
-
-
-                    const isEmployed =
-                        /employed|motor|workshop|tech|salary|joined/i
-                            .test(text);
-
-
-                    this.responses.unshift({
-
-                        id: 'sim_' + Date.now(),
-
-                        phone:
-                            `9198765${randomSuffix}`,
-
-                        text: text,
-
-                        timestamp:
-                            new Date().toLocaleTimeString(
-                                [],
-                                {
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                }
-                            ),
-
-                        verified: isEmployed
-
-                    });
-
-                },
-
-
-                /* =====================================================
-                   EMPLOYER DEMAND
-                ===================================================== */
-
-                submitEmployerDemand() {
-
-                    this.submittedDemands.unshift({
-
-                        ...this.employerForm
-
-                    });
-
-
-                    alert(
-                        'Demand Signal submitted to MSSDS!'
-                    );
-
-
-                    this.employerForm.role = '';
-
-                    this.employerForm.openings = '';
-
-                },
-
-
-                /* =====================================================
-                   UPDATE GOVERNMENT METRICS
-                ===================================================== */
-
-                updateMetrics() {
-
-                    let total = 124500;
-
-                    let placement = 68.4;
-
-                    let wage = 16450;
-
-
-                    if (this.district === 'Pune') {
-
-                        total = 32150;
-                        placement = 81.2;
-                        wage = 19800;
-
-                    }
-
-                    else if (this.district === 'Nagpur') {
-
-                        total = 18500;
-                        placement = 62.1;
-                        wage = 14200;
-
-                    }
-
-                    else if (this.district === 'Thane') {
-
-                        total = 28400;
-                        placement = 75.5;
-                        wage = 17500;
-
-                    }
-
-                    else if (this.district === 'Aurangabad') {
-
-                        total = 12000;
-                        placement = 58.0;
-                        wage = 13500;
-
-                    }
-
-
-                    if (this.scheme === 'PMKVY 4.0') {
-
-                        placement += 1.5;
-
-                    }
-
-                    else if (
-                        this.scheme === 'Apprenticeship Scheme'
+                    if (
+                        !Array.isArray(data)
                     ) {
 
-                        placement += 8.0;
+                        return;
 
                     }
 
 
-                    this.metrics.total =
-                        total.toLocaleString('en-IN');
+                    data.forEach(remoteItem => {
 
+                        const exists =
+                            this.responses.some(
 
-                    this.metrics.placement =
-                        placement.toFixed(1) + '%';
+                                r =>
+                                    r.id &&
+                                    remoteItem.id &&
+                                    r.id === remoteItem.id
 
-
-                    this.metrics.wage =
-                        '₹' +
-                        wage.toLocaleString('en-IN');
-
-                },
-
-
-                /* =====================================================
-                   CHARTS
-                ===================================================== */
-
-                initCharts() {
-
-                    setTimeout(() => {
-
-
-                        /* ==============================
-                           VERIFICATION CHART
-                        ============================== */
-
-                        const ctx1 =
-                            document.getElementById(
-                                'verificationChart'
                             );
 
 
-                        if (ctx1) {
+                        if (!exists) {
 
+                            this.responses.unshift(
+                                remoteItem
+                            );
+
+                        }
+
+                    });
+
+                }
+
+                catch (err) {
+
+                    /* Backend may be unavailable during demo */
+
+                }
+
+            },
+
+
+            /* =====================================================
+               MANUAL RESPONSE
+            ===================================================== */
+
+            submitManualResponse(isEmployed) {
+
+                if (
+                    !this.manualReplyText.trim()
+                ) {
+
+                    alert(
+                        'Please type or paste the response message first.'
+                    );
+
+                    return;
+
+                }
+
+
+                this.responses.unshift({
+
+                    id:
+                        'man_' +
+                        Date.now(),
+
+                    phone:
+                        this.surveyForm.phone,
+
+                    text:
+                        this.manualReplyText,
+
+                    timestamp:
+                        new Date().toLocaleTimeString(
+                            [],
+                            {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            }
+                        ),
+
+                    verified:
+                        isEmployed
+
+                });
+
+
+                this.manualReplyText = '';
+
+            },
+
+
+            /* =====================================================
+               DEMO INBOUND RESPONSE
+            ===================================================== */
+
+            simulateInbound(text) {
+
+                const randomSuffix =
+                    Math.floor(
+                        1000 +
+                        Math.random() * 9000
+                    );
+
+
+                const isEmployed =
+                    /employed|motor|workshop|tech|salary|joined/i
+                        .test(text);
+
+
+                this.responses.unshift({
+
+                    id:
+                        'sim_' +
+                        Date.now(),
+
+                    phone:
+                        `9198765${randomSuffix}`,
+
+                    text:
+
+                        text,
+
+                    timestamp:
+
+                        new Date().toLocaleTimeString(
+                            [],
+                            {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            }
+                        ),
+
+                    verified:
+                        isEmployed
+
+                });
+
+            },
+
+
+            /* =====================================================
+               EMPLOYER DEMAND
+            ===================================================== */
+
+            submitEmployerDemand() {
+
+                this.submittedDemands.unshift({
+
+                    ...this.employerForm
+
+                });
+
+
+                alert(
+                    'Demand Signal submitted to MSSDS!'
+                );
+
+
+                this.employerForm.role = '';
+
+                this.employerForm.openings = '';
+
+            },
+
+
+            /* =====================================================
+               LEGACY FUNCTION
+               Kept so nothing breaks if an old button calls it.
+            ===================================================== */
+
+            updateMetrics() {
+
+                this.loadGovernmentMetrics();
+
+            },
+
+
+            /* =====================================================
+               CHART INITIALIZATION
+            ===================================================== */
+
+            initCharts() {
+
+                setTimeout(() => {
+
+                    const ctx1 =
+                        document.getElementById(
+                            'verificationChart'
+                        );
+
+
+                    const ctx2 =
+                        document.getElementById(
+                            'gapChart'
+                        );
+
+
+                    if (ctx1) {
+
+                        this.verificationChart =
                             new Chart(
                                 ctx1.getContext('2d'),
                                 {
@@ -1936,28 +2040,13 @@ Please reply to update your record.`
 
                                     data: {
 
-                                        labels: [
-
-                                            'WhatsApp Direct Survey',
-
-                                            'EPFO Live Confirmed',
-
-                                            'Employer Verified',
-
-                                            'Unverified'
-
-                                        ],
+                                        labels: [],
 
                                         datasets: [
 
                                             {
 
-                                                data: [
-                                                    54,
-                                                    26,
-                                                    12,
-                                                    8
-                                                ],
+                                                data: [],
 
                                                 backgroundColor: [
 
@@ -1976,7 +2065,6 @@ Please reply to update your record.`
 
                                     },
 
-
                                     options: {
 
                                         responsive: true,
@@ -1988,43 +2076,23 @@ Please reply to update your record.`
                                 }
                             );
 
-                        }
+                    }
 
 
-                        /* ==============================
-                           DEMAND VS SUPPLY CHART
-                        ============================== */
+                    if (ctx2) {
 
-                        const ctx2 =
-                            document.getElementById(
-                                'gapChart'
-                            );
-
-
-                        if (ctx2) {
-
+                        this.gapChart =
                             new Chart(
+
                                 ctx2.getContext('2d'),
+
                                 {
 
                                     type: 'bar',
 
                                     data: {
 
-                                        labels: [
-
-                                            'Auto & EV',
-
-                                            'IT & AI',
-
-                                            'Green Solar',
-
-                                            'Healthcare',
-
-                                            'Semiconductors'
-
-                                        ],
-
+                                        labels: [],
 
                                         datasets: [
 
@@ -2033,13 +2101,7 @@ Please reply to update your record.`
                                                 label:
                                                     'Market Demand',
 
-                                                data: [
-                                                    18500,
-                                                    24000,
-                                                    14000,
-                                                    19500,
-                                                    8500
-                                                ],
+                                                data: [],
 
                                                 backgroundColor:
                                                     '#4F46E5',
@@ -2048,19 +2110,12 @@ Please reply to update your record.`
 
                                             },
 
-
                                             {
 
                                                 label:
                                                     'Trained Supply',
 
-                                                data: [
-                                                    12000,
-                                                    27000,
-                                                    5500,
-                                                    11000,
-                                                    2200
-                                                ],
+                                                data: [],
 
                                                 backgroundColor:
                                                     '#F59E0B',
@@ -2073,12 +2128,22 @@ Please reply to update your record.`
 
                                     },
 
-
                                     options: {
 
                                         responsive: true,
 
-                                        maintainAspectRatio: false
+                                        maintainAspectRatio: false,
+
+                                        scales: {
+
+                                            y: {
+
+                                                beginAtZero:
+                                                    true
+
+                                            }
+
+                                        }
 
                                     }
 
@@ -2086,17 +2151,177 @@ Please reply to update your record.`
 
                             );
 
-                        }
+                    }
 
-                    }, 150);
+
+                    /* Backend data may have loaded before charts */
+
+                    this.updateGovernmentCharts();
+
+                }, 300);
+
+            },
+
+
+            /* =====================================================
+               UPDATE CHARTS USING DATABASE DATA
+            ===================================================== */
+
+            updateGovernmentCharts() {
+
+                /* Verification chart */
+
+                if (
+                    this.verificationChart &&
+                    Array.isArray(
+                        this.verificationData
+                    )
+                ) {
+
+                    const verificationMap = {
+
+                        WhatsApp:
+                            'WhatsApp Direct Survey',
+
+                        EPFO:
+                            'EPFO Live Confirmed',
+
+                        Employer:
+                            'Employer Verified'
+
+                    };
+
+
+                    const labels =
+                        this.verificationData.map(
+
+                            item =>
+                                verificationMap[
+                                    item.source
+                                ] ||
+                                item.source
+
+                        );
+
+
+                    const values =
+                        this.verificationData.map(
+
+                            item =>
+                                Number(
+                                    item.count || 0
+                                )
+
+                        );
+
+
+                    this.verificationChart.data.labels =
+                        labels;
+
+
+                    this.verificationChart.data.datasets[0].data =
+                        values;
+
+
+                    this.verificationChart.update();
 
                 }
 
-            };
 
-        }
+                /* Demand / Supply chart */
 
-    </script>
+                if (
+                    this.gapChart
+                ) {
+
+                    const demandMap = {};
+
+                    const supplyMap = {};
+
+
+                    this.demandData.forEach(
+                        item => {
+
+                            demandMap[
+                                item.sector
+                            ] =
+                                Number(
+                                    item.demand || 0
+                                );
+
+                        }
+                    );
+
+
+                    this.supplyData.forEach(
+                        item => {
+
+                            supplyMap[
+                                item.sector
+                            ] =
+                                Number(
+                                    item.supply || 0
+                                );
+
+                        }
+                    );
+
+
+                    const sectors =
+                        Array.from(
+
+                            new Set(
+
+                                [
+
+                                    ...Object.keys(
+                                        demandMap
+                                    ),
+
+                                    ...Object.keys(
+                                        supplyMap
+                                    )
+
+                                ]
+
+                            )
+
+                        );
+
+
+                    this.gapChart.data.labels =
+                        sectors;
+
+
+                    this.gapChart.data.datasets[0].data =
+                        sectors.map(
+
+                            sector =>
+                                demandMap[sector] || 0
+
+                        );
+
+
+                    this.gapChart.data.datasets[1].data =
+                        sectors.map(
+
+                            sector =>
+                                supplyMap[sector] || 0
+
+                        );
+
+
+                    this.gapChart.update();
+
+                }
+
+            }
+
+        };
+
+    }
+
+</script>
 
 </body>
 </html>
