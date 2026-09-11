@@ -202,6 +202,413 @@ app.get("/api/tables-test", async (req, res) => {
     }
 });
 
+// ================================
+// SEED PMKVY / MAHARASHTRA DEMO DATA
+// ================================
+
+app.get("/api/seed-demo", async (req, res) => {
+
+    try {
+
+        // Safety check
+        if (req.query.key !== "SKILLTRACK2026") {
+            return res.status(403).json({
+                success: false,
+                error: "Unauthorized"
+            });
+        }
+
+        // Add scheme column if it does not already exist
+        await pool.query(`
+            ALTER TABLE enrollments
+            ADD COLUMN IF NOT EXISTS scheme VARCHAR(100);
+        `);
+
+        // --------------------------------
+        // 1. TRAINING CENTERS
+        // --------------------------------
+
+        const centers = [
+            ["MSSDS-PUN-001", "Government ITI Aundh", "Pune", "Maharashtra", "A"],
+            ["MSSDS-PUN-002", "Skill Development Centre Pune", "Pune", "Maharashtra", "A"],
+            ["MSSDS-NAG-001", "Government Skill Centre Nagpur", "Nagpur", "Maharashtra", "A"],
+            ["MSSDS-THA-001", "Skill Development Centre Thane", "Thane", "Maharashtra", "B"],
+            ["MSSDS-AUR-001", "Government ITI Chhatrapati Sambhajinagar", "Aurangabad", "Maharashtra", "A"],
+            ["MSSDS-NAS-001", "Skill Development Centre Nashik", "Nashik", "Maharashtra", "B"],
+            ["MSSDS-KOL-001", "Government Skill Centre Kolhapur", "Kolhapur", "Maharashtra", "B"],
+            ["MSSDS-SOL-001", "Skill Development Centre Solapur", "Solapur", "Maharashtra", "B"]
+        ];
+
+        for (const center of centers) {
+
+            await pool.query(`
+                INSERT INTO training_centers
+                (center_id, name, district, state, grade)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (center_id) DO NOTHING
+            `, center);
+
+        }
+
+
+        // --------------------------------
+        // 2. COURSES
+        // --------------------------------
+
+        const courses = [
+            ["CRS-001", "Data Entry Operator", "IT-ITeS", 3],
+            ["CRS-002", "Web Developer", "IT-ITeS", 6],
+            ["CRS-003", "Electrician", "Electrical", 6],
+            ["CRS-004", "Solar PV Installer", "Green Jobs", 3],
+            ["CRS-005", "Automotive Service Technician", "Automotive", 6],
+            ["CRS-006", "General Duty Assistant", "Healthcare", 3],
+            ["CRS-007", "Retail Sales Associate", "Retail", 3],
+            ["CRS-008", "CNC Machine Operator", "Capital Goods", 6],
+            ["CRS-009", "Beauty Therapist", "Beauty & Wellness", 3],
+            ["CRS-010", "Warehouse Associate", "Logistics", 3]
+        ];
+
+        for (const course of courses) {
+
+            await pool.query(`
+                INSERT INTO courses
+                (course_id, name, sector, duration_months)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (course_id) DO NOTHING
+            `, course);
+
+        }
+
+
+        // --------------------------------
+        // 3. TRAINEES
+        // --------------------------------
+
+        const districts = [
+            "Pune",
+            "Nagpur",
+            "Thane",
+            "Aurangabad",
+            "Nashik",
+            "Kolhapur",
+            "Solapur"
+        ];
+
+        const firstNames = [
+            "Aarav",
+            "Aditya",
+            "Amit",
+            "Anjali",
+            "Ananya",
+            "Arjun",
+            "Akash",
+            "Priya",
+            "Rahul",
+            "Riya",
+            "Sneha",
+            "Rohit",
+            "Vikas",
+            "Neha",
+            "Pooja",
+            "Karan",
+            "Sakshi",
+            "Vivek",
+            "Nikhil",
+            "Shreya"
+        ];
+
+        for (let i = 1; i <= 500; i++) {
+
+            const traineeId =
+                `MH-SKILL-${String(i).padStart(5, "0")}`;
+
+            const name =
+                firstNames[(i - 1) % firstNames.length];
+
+            const district =
+                districts[(i - 1) % districts.length];
+
+            const phone =
+                `91${7000000000 + i}`;
+
+            await pool.query(`
+                INSERT INTO trainees
+                (trainee_id, name, phone, district, registration_date)
+                VALUES
+                ($1, $2, $3, $4, CURRENT_DATE - (($5 % 365)::int))
+                ON CONFLICT (trainee_id) DO NOTHING
+            `, [
+                traineeId,
+                `${name} ${1000 + i}`,
+                phone,
+                district,
+                i
+            ]);
+
+        }
+
+
+        // --------------------------------
+        // 4. ENROLLMENTS
+        // --------------------------------
+
+        const schemes = [
+            "PMKUVA",
+            "PMKUVA",
+            "PMKUVA",
+            "PM-GKVK",
+            "DPC",
+            "ACKCK",
+            "SANKALP",
+            "PMKVY"
+        ];
+
+        for (let i = 1; i <= 500; i++) {
+
+            const traineeId =
+                `MH-SKILL-${String(i).padStart(5, "0")}`;
+
+            const course =
+                courses[(i - 1) % courses.length];
+
+            const center =
+                centers[(i - 1) % centers.length];
+
+            const scheme =
+                schemes[(i - 1) % schemes.length];
+
+            const status =
+                i % 10 === 0
+                    ? "Enrolled"
+                    : i % 7 === 0
+                        ? "In Progress"
+                        : "Completed";
+
+            await pool.query(`
+                INSERT INTO enrollments
+                (
+                    trainee_id,
+                    course_id,
+                    center_id,
+                    batch_id,
+                    enrollment_date,
+                    completion_date,
+                    status,
+                    scheme
+                )
+                SELECT
+                    t.id,
+                    c.id,
+                    tc.id,
+                    $1,
+                    CURRENT_DATE - (($2 % 300)::int),
+                    CASE
+                        WHEN $3 = 'Completed'
+                        THEN CURRENT_DATE - (($2 % 150)::int)
+                        ELSE NULL
+                    END,
+                    $3,
+                    $4
+                FROM trainees t
+                CROSS JOIN courses c
+                CROSS JOIN training_centers tc
+                WHERE
+                    t.trainee_id = $5
+                    AND c.course_id = $6
+                    AND tc.center_id = $7
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM enrollments e
+                    WHERE e.trainee_id = t.id
+                )
+            `, [
+                `BATCH-${Math.floor((i - 1) / 25) + 1}`,
+                i,
+                status,
+                scheme,
+                traineeId,
+                course[0],
+                center[0]
+            ]);
+
+        }
+
+
+        // --------------------------------
+        // 5. EMPLOYMENT OUTCOMES
+        // --------------------------------
+
+        const companies = [
+            "TechServe Solutions",
+            "Maharashtra AutoWorks",
+            "Green Energy Services",
+            "HealthCare Plus",
+            "Digital Retail India",
+            "Pune Industrial Systems",
+            "LogiMove India"
+        ];
+
+        const roles = [
+            "Junior Web Developer",
+            "Data Entry Operator",
+            "Automotive Technician",
+            "Solar Technician",
+            "Healthcare Assistant",
+            "Retail Associate",
+            "CNC Operator"
+        ];
+
+        const verificationSources = [
+            "Employer",
+            "WhatsApp",
+            "EPFO",
+            "Employer",
+            "WhatsApp"
+        ];
+
+        for (let i = 1; i <= 500; i++) {
+
+            // Approximately 68% employed
+            if (i % 100 > 67) {
+                continue;
+            }
+
+            const traineeId =
+                `MH-SKILL-${String(i).padStart(5, "0")}`;
+
+            const salary =
+                10000 + ((i * 137) % 18000);
+
+            const company =
+                companies[(i - 1) % companies.length];
+
+            const role =
+                roles[(i - 1) % roles.length];
+
+            const source =
+                verificationSources[(i - 1) % verificationSources.length];
+
+            await pool.query(`
+                INSERT INTO employment
+                (
+                    trainee_id,
+                    status,
+                    company,
+                    role,
+                    salary,
+                    employment_date,
+                    verification_source,
+                    verified
+                )
+                SELECT
+                    id,
+                    'Employed',
+                    $1,
+                    $2,
+                    $3,
+                    CURRENT_DATE - (($4 % 120)::int),
+                    $5,
+                    TRUE
+                FROM trainees
+                WHERE trainee_id = $6
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM employment e
+                    WHERE e.trainee_id = trainees.id
+                )
+            `, [
+                company,
+                role,
+                salary,
+                i,
+                source,
+                traineeId
+            ]);
+
+        }
+
+
+        // --------------------------------
+        // 6. JOB DEMAND
+        // --------------------------------
+
+        const demands = [
+            ["Tata Auto Systems", "Automotive Technician", "Automotive", 180, "Pune"],
+            ["Tech Mahindra", "Junior Web Developer", "IT-ITeS", 250, "Pune"],
+            ["Infosys", "Data Entry Operator", "IT-ITeS", 140, "Pune"],
+            ["Adani Green", "Solar Technician", "Green Jobs", 220, "Nagpur"],
+            ["Apollo Partner Network", "Healthcare Assistant", "Healthcare", 160, "Thane"],
+            ["RetailMart India", "Retail Associate", "Retail", 190, "Pune"],
+            ["Industrial Solutions", "CNC Operator", "Capital Goods", 120, "Aurangabad"],
+            ["LogiMove India", "Warehouse Associate", "Logistics", 210, "Nashik"]
+        ];
+
+        for (const demand of demands) {
+
+            await pool.query(`
+                INSERT INTO job_demand
+                (company, role, sector, openings, district, source)
+                SELECT $1, $2, $3, $4, $5, 'Demo job-market dataset'
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM job_demand
+                    WHERE company = $1
+                    AND role = $2
+                    AND district = $5
+                )
+            `, demand);
+
+        }
+
+
+        // --------------------------------
+        // RESULT
+        // --------------------------------
+
+        const counts = await pool.query(`
+            SELECT
+                (SELECT COUNT(*) FROM trainees) AS trainees,
+                (SELECT COUNT(*) FROM training_centers) AS training_centers,
+                (SELECT COUNT(*) FROM courses) AS courses,
+                (SELECT COUNT(*) FROM enrollments) AS enrollments,
+                (SELECT COUNT(*) FROM employment) AS employment,
+                (SELECT COUNT(*) FROM job_demand) AS job_demand
+        `);
+
+        res.json({
+
+            success: true,
+
+            message:
+                "PMKVY/Maharashtra-based synthetic demo data inserted successfully",
+
+            warning:
+                "Individual trainee records are synthetic and must not be presented as actual government beneficiary records.",
+
+            counts:
+                counts.rows[0]
+
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Demo data seed error:",
+            error
+        );
+
+        res.status(500).json({
+
+            success: false,
+
+            error:
+                error.message
+
+        });
+
+    }
+
+});
 
 // ================================
 // SEND WHATSAPP MESSAGE
