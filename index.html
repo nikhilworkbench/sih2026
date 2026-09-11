@@ -791,7 +791,7 @@
 
                     <select
                         x-model="district"
-                        @change="updateMetrics"
+                        @change="loadGovernmentMetrics()"
                         class="border border-gray-300 rounded-lg
                                px-3 py-2 text-sm bg-gray-50">
 
@@ -806,7 +806,7 @@
 
                     <select
                         x-model="scheme"
-                        @change="updateMetrics"
+                        @change="loadGovernmentMetrics()"
                         class="border border-gray-300 rounded-lg
                                px-3 py-2 text-sm bg-gray-50">
 
@@ -1298,7 +1298,53 @@
 
         function unifiedApp() {
 
+            async loadGovernmentMetrics() {
+    try {
+        const district = this.govDistrict || "All Maharashtra";
+        const scheme = this.govScheme || "All Schemes";
+
+        const response = await fetch(
+            `/api/government-metrics?district=${encodeURIComponent(district)}&scheme=${encodeURIComponent(scheme)}`
+        );
+
+        const data = await response.json();
+
+        if (!data.success) {
+            console.error("Government metrics error:", data.error);
+            return;
+        }
+
+        // Main KPI cards
+        this.govMetrics.total = data.metrics.total.toLocaleString("en-IN");
+        this.govMetrics.placementRate = data.metrics.placementRate + "%";
+        this.govMetrics.avgSalary =
+            "₹" + data.metrics.avgSalary.toLocaleString("en-IN");
+        this.govMetrics.skillScore = data.metrics.skillScore + "/100";
+
+        // Verification chart
+        this.verificationData = data.verification;
+
+        // Demand vs supply
+        this.demandData = data.demand;
+        this.supplyData = data.supply;
+
+    } catch (error) {
+        console.error("Failed to load government metrics:", error);
+    }
+}
+
             return {
+
+                govMetrics: {
+    total: "0",
+    placementRate: "0%",
+    avgSalary: "₹0",
+    skillScore: "0/100"
+},
+
+verificationData: [],
+demandData: [],
+supplyData: [],
 
                 activeTab: 'whatsapp',
 
@@ -1478,6 +1524,8 @@
                 ===================================================== */
 
                 init() {
+
+                    this.loadGovernmentMetrics();
 
                     this.initCharts();
 
