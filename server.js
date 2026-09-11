@@ -942,6 +942,125 @@ app.post(
     }
 );
 
+app.get("/api/government-metrics", async (req, res) => {
+  try {
+    const district = req.query.district || "All Maharashtra";
+    const scheme = req.query.scheme || "All Schemes";
+
+    let traineeWhere = "";
+    let enrollmentWhere = "";
+    const traineeParams = [];
+    const enrollmentParams = [];
+
+    if (district !== "All Maharashtra") {
+      traineeParams.push(district);
+      traineeWhere = `WHERE district = $${traineeParams.length}`;
+
+      enrollmentParams.push(district);
+      enrollmentWhere = `
+        WHERE trainee_id IN (
+          SELECT id FROM trainees WHERE district = $${enrollmentParams.length}
+        )
+      `;
+    }
+
+    if (scheme !== "All Schemes") {
+      enrollmentParams.push(scheme);
+      enrollmentWhere +=
+        (enrollmentWhere ? " AND " : " WHERE ") +
+        `scheme = $${enrollmentParams.length}`;
+    }
+
+    // Total trainees
+    const traineeResult = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM trainees ${traineeWhere}`,
+      traineeParams
+    );
+
+    // Employment / placement
+    const employmentResult = await pool.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE e.status = 'Employed')::int AS employed,
+        COALESCE(AVG(e.salary) FILTER (WHERE e.salary IS NOT NULL), 0)::numeric AS avg_salary
+      FROM employment e
+      JOIN trainees t ON t.id = e.trainee_id
+      ${district !== "All Maharashtra" ? "WHERE t.district = $1" : ""}
+    `, district !== "All Maharashtra" ? [district] : []);
+
+    // Verification sources
+    const verificationResult = await pool.query(`
+      SELECT verification_source, COUNT(*)::int AS count
+      FROM employment e
+      JOIN trainees t ON t.id = e.trainee_id
+      ${district !== "All Maharashtra" ? "WHERE t.district = $1" : ""}
+      GROUP BY verification_source
+    `, district !== "All Maharashtra" ? [district] : []);
+
+    // Sector demand
+    const demandResult = await pool.query(`
+      SELECT sector, SUM(openings)::int AS demand
+      FROM job_demand
+      ${district !== "All Maharashtra" ? "WHERE district = $1" : ""}
+      GROUP BY sector
+      ORDER BY demand DESC
+    `, district !== "All Maharashtra" ? [district] : []);
+
+    // Supply by course sector
+    const supplyResult = await pool.query(`
+      SELECT c.sector, COUNT(*)::int AS supply
+      FROM enrollments e
+      JOIN courses c ON c.id = e.course_id
+      JOIN trainees t ON t.id = e.trainee_id
+      ${enrollmentWhere}
+      GROUP BY c.sector
+      ORDER BY supply DESC
+    `, enrollmentParams);
+
+    const total = traineeResult.rows[0].total;
+    const employed = employmentResult.rows[0].employed;
+    const avgSalary = Math.round(
+      Number(employmentResult.rows[0].avg_salary)
+    );
+
+    const placementRate = total > 0
+      ? Number(((employed / total) * 100).toFixed(1))
+      : 0;
+
+    res.json({
+      success: true,
+
+      metrics: {
+        total,
+        placementRate,
+        avgSalary,
+        skillScore: 74
+      },
+
+      verification: verificationResult.rows.map(row => ({
+        source: row.verification_source,
+        count: row.count
+      })),
+
+      demand: demandResult.rows.map(row => ({
+        sector: row.sector,
+        demand: row.demand
+      })),
+
+      supply: supplyResult.rows.map(row => ({
+        sector: row.sector,
+        supply: row.supply
+      }))
+    });
+
+  } catch (error) {
+    console.error("Government metrics error:", error);
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 
 // ================================
 // START SERVER
