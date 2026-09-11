@@ -1,19 +1,29 @@
-const { Pool } = require("pg");
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === "production"
-    ? { rejectUnauthorized: false }
-    : false
-});
+require("dotenv").config();
 
 const express = require("express");
 const path = require("path");
-require("dotenv").config();
+const fs = require("fs");
+const { Pool } = require("pg");
 
 const app = express();
 
 const PORT = process.env.PORT || 5000;
+
+// ================================
+// POSTGRESQL DATABASE
+// ================================
+
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === "production"
+        ? { rejectUnauthorized: false }
+        : false
+});
+
+
+// ================================
+// WHATSAPP CONFIGURATION
+// ================================
 
 const ACCESS_TOKEN =
     process.env.WHATSAPP_ACCESS_TOKEN;
@@ -44,6 +54,41 @@ app.use(express.static(
 
 
 // ================================
+// DATABASE INITIALIZATION
+// ================================
+
+async function initializeDatabase() {
+
+    try {
+
+        const schemaPath =
+            path.join(__dirname, "schema.sql");
+
+        const schema =
+            fs.readFileSync(
+                schemaPath,
+                "utf8"
+            );
+
+        await pool.query(schema);
+
+        console.log(
+            "PostgreSQL database schema initialized successfully"
+        );
+
+    } catch (error) {
+
+        console.error(
+            "Database initialization failed:",
+            error.message
+        );
+
+    }
+
+}
+
+
+// ================================
 // HOME
 // ================================
 
@@ -63,34 +108,74 @@ app.get("/", (req, res) => {
 app.get("/api/health", (req, res) => {
 
     res.json({
+
         success: true,
+
         whatsappConfigured:
             Boolean(
                 ACCESS_TOKEN &&
                 PHONE_NUMBER_ID
             ),
-        template: TEMPLATE_NAME
+
+        databaseConfigured:
+            Boolean(
+                process.env.DATABASE_URL
+            ),
+
+        template:
+            TEMPLATE_NAME
+
     });
 
 });
 
+
+// ================================
+// DATABASE TEST
+// ================================
+
 app.get("/api/db-test", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT NOW() AS current_time");
 
-    res.json({
-      success: true,
-      message: "PostgreSQL connected successfully",
-      time: result.rows[0].current_time
-    });
-  } catch (error) {
-    console.error("Database connection error:", error);
+    try {
 
-    res.status(500).json({
-      success: false,
-      message: "Database connection failed"
-    });
-  }
+        const result =
+            await pool.query(
+                "SELECT NOW() AS current_time"
+            );
+
+        res.json({
+
+            success: true,
+
+            message:
+                "PostgreSQL connected successfully",
+
+            time:
+                result.rows[0].current_time
+
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Database connection error:",
+            error
+        );
+
+        res.status(500).json({
+
+            success: false,
+
+            message:
+                "Database connection failed",
+
+            error:
+                error.message
+
+        });
+
+    }
+
 });
 
 
@@ -115,9 +200,12 @@ app.post(
             if (!phone) {
 
                 return res.status(400).json({
+
                     success: false,
+
                     error:
                         "Phone number is required"
+
                 });
 
             }
@@ -129,15 +217,17 @@ app.post(
             ) {
 
                 return res.status(500).json({
+
                     success: false,
+
                     error:
                         "WhatsApp API is not configured on the server"
+
                 });
 
             }
 
 
-            // Remove spaces, +, -, etc.
             const cleanPhone =
                 String(phone)
                     .replace(/\D/g, "");
@@ -154,9 +244,11 @@ app.post(
                 messaging_product:
                     "whatsapp",
 
-                to: cleanPhone,
+                to:
+                    cleanPhone,
 
-                type: "template",
+                type:
+                    "template",
 
                 template: {
 
@@ -164,39 +256,58 @@ app.post(
                         TEMPLATE_NAME,
 
                     language: {
+
                         code:
                             TEMPLATE_LANGUAGE
+
                     },
 
                     components: [
 
                         {
-                            type: "body",
+
+                            type:
+                                "body",
 
                             parameters: [
 
                                 {
-                                    type: "text",
+
+                                    type:
+                                        "text",
+
                                     text:
                                         String(
-                                            name || "Trainee"
+                                            name ||
+                                            "Trainee"
                                         )
+
                                 },
 
                                 {
-                                    type: "text",
+
+                                    type:
+                                        "text",
+
                                     text:
                                         String(
-                                            course || "your training"
+                                            course ||
+                                            "your training"
                                         )
+
                                 },
 
                                 {
-                                    type: "text",
+
+                                    type:
+                                        "text",
+
                                     text:
                                         String(
-                                            sector || "your sector"
+                                            sector ||
+                                            "your sector"
                                         )
+
                                 }
 
                             ]
@@ -215,7 +326,8 @@ app.post(
                     url,
                     {
 
-                        method: "POST",
+                        method:
+                            "POST",
 
                         headers: {
 
@@ -252,7 +364,8 @@ app.post(
                     response.status
                 ).json({
 
-                    success: false,
+                    success:
+                        false,
 
                     error:
                         result?.error?.message ||
@@ -272,10 +385,10 @@ app.post(
 
             return res.json({
 
-                success: true,
+                success:
+                    true,
 
                 messageId:
-
                     messageId || null,
 
                 message:
@@ -286,12 +399,15 @@ app.post(
 
         } catch (error) {
 
-            console.error(error);
+            console.error(
+                error
+            );
 
 
             return res.status(500).json({
 
-                success: false,
+                success:
+                    false,
 
                 error:
                     error.message ||
@@ -332,7 +448,8 @@ app.get(
                 "WhatsApp webhook verified"
             );
 
-            return res.status(200)
+            return res
+                .status(200)
                 .send(challenge);
 
         }
@@ -354,12 +471,14 @@ app.post(
 
         try {
 
-            const body = req.body;
+            const body =
+                req.body;
 
 
             console.log(
                 "WhatsApp webhook received:"
             );
+
 
             console.log(
                 JSON.stringify(
@@ -370,22 +489,14 @@ app.post(
             );
 
 
-            /*
-             * Here you can process:
-             *
-             * incoming trainee replies
-             * message status
-             * delivery status
-             * read status
-             */
-
-
             return res.sendStatus(200);
 
 
         } catch (error) {
 
-            console.error(error);
+            console.error(
+                error
+            );
 
             return res.sendStatus(500);
 
@@ -401,11 +512,13 @@ app.post(
 
 app.listen(
     PORT,
-    () => {
+    async () => {
 
         console.log(
             `SkillTrack server running on port ${PORT}`
         );
+
+        await initializeDatabase();
 
     }
 );
