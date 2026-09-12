@@ -1048,93 +1048,90 @@
                         </thead>
 
 
-                        <tbody class="divide-y divide-gray-100">
+<tbody class="divide-y divide-gray-100">
+
+    <template
+        x-for="batch in trainingBatches"
+        :key="batch.batchId">
+
+        <tr>
+
+            <td class="py-3 px-4 font-mono text-xs"
+                x-text="batch.batchId">
+            </td>
+
+            <td class="py-3 px-4 font-medium text-gray-900"
+                x-text="batch.courseName">
+            </td>
+
+            <td class="py-3 px-4"
+                x-text="batch.enrolled">
+            </td>
+
+            <td class="py-3 px-4 text-green-600 font-bold">
+
+                <span
+                    x-text="batch.epfoVerified + ' (' +
+                           batch.epfoPercent + '%)'">
+                </span>
+
+            </td>
+
+            <td class="py-3 px-4 text-indigo-600 font-semibold">
+
+                <span
+                    x-text="batch.whatsappVerified + ' (' +
+                           batch.whatsappPercent + '%)'">
+                </span>
+
+            </td>
+
+            <td class="py-3 px-4">
+
+                <span
+                    x-text="'₹' +
+                           batch.avgSalary.toLocaleString('en-IN')">
+                </span>
+
+            </td>
+
+            <td class="py-3 px-4">
+
+                <span
+                    class="text-xs px-2 py-0.5 rounded whitespace-nowrap"
+                    :class="batch.placementRate >= 80
+                        ? 'bg-green-100 text-green-700'
+                        : batch.placementRate >= 60
+                            ? 'bg-yellow-100 text-yellow-700'
+                            : 'bg-red-100 text-red-700'"
+                    x-text="batch.placementRate >= 80
+                        ? 'High Outcome'
+                        : batch.placementRate >= 60
+                            ? 'Satisfactory'
+                            : 'Needs Attention'">
+                </span>
+
+            </td>
+
+        </tr>
+
+    </template>
 
 
-                            <tr>
+    <tr
+        x-show="trainingBatches.length === 0">
 
-                                <td class="py-3 px-4 font-mono text-xs">
-                                    2025-CNC-B1
-                                </td>
+        <td
+            colspan="7"
+            class="py-8 text-center text-gray-400">
 
-                                <td class="py-3 px-4 font-medium text-gray-900">
-                                    CNC Machine Operator
-                                </td>
+            No training data available.
 
-                                <td class="py-3 px-4">
-                                    40
-                                </td>
+        </td>
 
-                                <td class="py-3 px-4 text-green-600 font-bold">
-                                    32 (80%)
-                                </td>
+    </tr>
 
-                                <td class="py-3 px-4 text-indigo-600 font-semibold">
-                                    38 (95%)
-                                </td>
-
-                                <td class="py-3 px-4">
-                                    ₹18,500
-                                </td>
-
-                                <td class="py-3 px-4">
-
-                                    <span
-                                        class="bg-green-100 text-green-700
-                                               text-xs px-2 py-0.5
-                                               rounded whitespace-nowrap">
-
-                                        High Outcome
-
-                                    </span>
-
-                                </td>
-
-                            </tr>
-
-
-                            <tr>
-
-                                <td class="py-3 px-4 font-mono text-xs">
-                                    2025-ELE-B3
-                                </td>
-
-                                <td class="py-3 px-4 font-medium text-gray-900">
-                                    Industrial Electrician
-                                </td>
-
-                                <td class="py-3 px-4">
-                                    50
-                                </td>
-
-                                <td class="py-3 px-4 text-green-600 font-bold">
-                                    35 (70%)
-                                </td>
-
-                                <td class="py-3 px-4 text-indigo-600 font-semibold">
-                                    44 (88%)
-                                </td>
-
-                                <td class="py-3 px-4">
-                                    ₹16,000
-                                </td>
-
-                                <td class="py-3 px-4">
-
-                                    <span
-                                        class="bg-green-100 text-green-700
-                                               text-xs px-2 py-0.5
-                                               rounded whitespace-nowrap">
-
-                                        Satisfactory
-
-                                    </span>
-
-                                </td>
-
-                            </tr>
-
-                        </tbody>
+</tbody>
 
                     </table>
 
@@ -1350,6 +1347,181 @@
 
             submittedDemands: [],
 
+/* =====================================================
+   TRAINING PROVIDER DATA
+===================================================== */
+
+trainingBatches: [],
+
+trainingSummary: {
+
+    enrolled: 0,
+
+    employed: 0,
+
+    placementRate: 0,
+
+    avgSalary: 0,
+
+    epfoVerified: 0,
+
+    whatsappVerified: 0
+
+},
+
+
+/* =====================================================
+   LOAD TRAINING PROVIDER DATA
+===================================================== */
+
+async loadTrainingProvider() {
+
+    try {
+
+        /*
+         * Demo center:
+         * Pune Government ITI / first center
+         *
+         * If center_id is omitted, API returns
+         * all training centers.
+         */
+
+        const response = await fetch(
+            `${this.backendUrl}/api/training-provider`
+        );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                `HTTP ${response.status}`
+            );
+
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (!data.success) {
+
+            console.error(
+                'Training provider error:',
+                data.error
+            );
+
+            return;
+
+        }
+
+
+        this.trainingSummary =
+            data.summary || {
+
+                enrolled: 0,
+
+                employed: 0,
+
+                placementRate: 0,
+
+                avgSalary: 0,
+
+                epfoVerified: 0,
+
+                whatsappVerified: 0
+
+            };
+
+
+        /*
+         * Convert API course records into
+         * table records.
+         */
+
+        this.trainingBatches =
+            (data.courses || []).map(
+                (course, index) => {
+
+                    const enrolled =
+                        Number(
+                            course.enrolled || 0
+                        );
+
+
+                    const epfoVerified =
+                        Number(
+                            course.epfoVerified || 0
+                        );
+
+
+                    const whatsappVerified =
+                        Number(
+                            course.whatsappVerified || 0
+                        );
+
+
+                    return {
+
+                        batchId:
+                            `DB-${String(index + 1)
+                                .padStart(3, '0')}`,
+
+                        courseName:
+                            course.courseName,
+
+                        enrolled,
+
+                        epfoVerified,
+
+                        whatsappVerified,
+
+                        epfoPercent:
+                            enrolled > 0
+                                ? Math.round(
+                                    epfoVerified /
+                                    enrolled *
+                                    100
+                                )
+                                : 0,
+
+                        whatsappPercent:
+                            enrolled > 0
+                                ? Math.round(
+                                    whatsappVerified /
+                                    enrolled *
+                                    100
+                                )
+                                : 0,
+
+                        avgSalary:
+                            Number(
+                                course.avgSalary || 0
+                            ),
+
+                        placementRate:
+                            Number(
+                                course.placementRate || 0
+                            )
+
+                    };
+
+                }
+            );
+
+    }
+
+    catch (error) {
+
+        console.error(
+            'Failed to load training provider data:',
+            error
+        );
+
+    }
+
+},
+
 
             /* =====================================================
                GOVERNMENT METRICS
@@ -1496,6 +1668,8 @@
             init() {
 
                 this.loadGovernmentMetrics();
+
+                this.loadTrainingProvider();
 
                 this.initCharts();
 
