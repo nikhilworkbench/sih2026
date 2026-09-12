@@ -1062,6 +1062,7 @@ app.get("/api/government-metrics", async (req, res) => {
   }
 });
 
+```js
 // =====================================================
 // TRAINING PROVIDER DASHBOARD API
 // =====================================================
@@ -1070,10 +1071,12 @@ app.get("/api/training-provider", async (req, res) => {
 
     try {
 
-        const centerId = req.query.center_id || null;
+        const centerId =
+            req.query.center_id || null;
 
         let whereClause = "";
         const params = [];
+
 
         if (centerId) {
 
@@ -1086,26 +1089,19 @@ app.get("/api/training-provider", async (req, res) => {
         }
 
 
-        // Get course-wise training outcomes
         const result = await pool.query(`
 
             SELECT
 
-                tc.id AS center_db_id,
-
                 tc.center_id,
-
                 tc.name AS center_name,
-
                 tc.district,
 
-                c.id AS course_db_id,
-
                 c.course_id,
-
                 c.name AS course_name,
-
                 c.sector,
+
+                e.batch_id,
 
                 COUNT(DISTINCT e.trainee_id)::int
                     AS enrolled,
@@ -1155,25 +1151,26 @@ app.get("/api/training-provider", async (req, res) => {
 
             GROUP BY
 
-                tc.id,
                 tc.center_id,
                 tc.name,
                 tc.district,
-                c.id,
+
                 c.course_id,
                 c.name,
-                c.sector
+                c.sector,
+
+                e.batch_id
 
             ORDER BY
 
                 tc.name,
-                c.name
+                c.name,
+                e.batch_id
 
         `, params);
 
 
-        // Transform course rows
-        const courses = result.rows.map(row => {
+        const batches = result.rows.map(row => {
 
             const enrolled =
                 Number(row.enrolled || 0);
@@ -1210,10 +1207,16 @@ app.get("/api/training-provider", async (req, res) => {
                     row.course_id,
 
                 courseName:
-                    row.course_name || "Unknown Course",
+                    row.course_name ||
+                    "Unknown Course",
 
                 sector:
-                    row.sector || "Unknown",
+                    row.sector ||
+                    "Unknown",
+
+                batchId:
+                    row.batch_id ||
+                    "Not Assigned",
 
                 enrolled,
 
@@ -1243,12 +1246,15 @@ app.get("/api/training-provider", async (req, res) => {
         });
 
 
-        // Overall totals
-        const totalEnrolled =
-            courses.reduce(
+        // =================================================
+        // OVERALL SUMMARY
+        // =================================================
 
-                (sum, course) =>
-                    sum + course.enrolled,
+        const totalEnrolled =
+            batches.reduce(
+
+                (sum, batch) =>
+                    sum + batch.enrolled,
 
                 0
 
@@ -1256,10 +1262,10 @@ app.get("/api/training-provider", async (req, res) => {
 
 
         const totalEmployed =
-            courses.reduce(
+            batches.reduce(
 
-                (sum, course) =>
-                    sum + course.employed,
+                (sum, batch) =>
+                    sum + batch.employed,
 
                 0
 
@@ -1267,10 +1273,10 @@ app.get("/api/training-provider", async (req, res) => {
 
 
         const totalEpfo =
-            courses.reduce(
+            batches.reduce(
 
-                (sum, course) =>
-                    sum + course.epfoVerified,
+                (sum, batch) =>
+                    sum + batch.epfoVerified,
 
                 0
 
@@ -1278,10 +1284,10 @@ app.get("/api/training-provider", async (req, res) => {
 
 
         const totalWhatsapp =
-            courses.reduce(
+            batches.reduce(
 
-                (sum, course) =>
-                    sum + course.whatsappVerified,
+                (sum, batch) =>
+                    sum + batch.whatsappVerified,
 
                 0
 
@@ -1304,16 +1310,15 @@ app.get("/api/training-provider", async (req, res) => {
                 : 0;
 
 
-        // Weighted average salary
-        const salaryWeightedTotal =
-            courses.reduce(
+        const weightedSalary =
+            batches.reduce(
 
-                (sum, course) =>
+                (sum, batch) =>
 
                     sum +
                     (
-                        course.avgSalary *
-                        course.employed
+                        batch.avgSalary *
+                        batch.employed
                     ),
 
                 0
@@ -1325,7 +1330,7 @@ app.get("/api/training-provider", async (req, res) => {
             totalEmployed > 0
 
                 ? Math.round(
-                    salaryWeightedTotal /
+                    weightedSalary /
                     totalEmployed
                 )
 
@@ -1356,7 +1361,7 @@ app.get("/api/training-provider", async (req, res) => {
 
             },
 
-            courses
+            batches
 
         });
 
@@ -1369,6 +1374,7 @@ app.get("/api/training-provider", async (req, res) => {
             error
         );
 
+
         res.status(500).json({
 
             success: false,
@@ -1380,6 +1386,7 @@ app.get("/api/training-provider", async (req, res) => {
     }
 
 });
+```
 
 // ================================
 // START SERVER
