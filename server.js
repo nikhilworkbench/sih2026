@@ -1062,6 +1062,326 @@ app.get("/api/government-metrics", async (req, res) => {
   }
 });
 
+```js
+// =====================================================
+// TRAINING PROVIDER DASHBOARD API
+// =====================================================
+
+app.get("/api/training-provider", async (req, res) => {
+
+    try {
+
+        const centerId = req.query.center_id || null;
+
+        let whereClause = "";
+        const params = [];
+
+        if (centerId) {
+
+            params.push(centerId);
+
+            whereClause = `
+                WHERE tc.center_id = $1
+            `;
+
+        }
+
+
+        // Get course-wise training outcomes
+        const result = await pool.query(`
+
+            SELECT
+
+                tc.id AS center_db_id,
+
+                tc.center_id,
+
+                tc.name AS center_name,
+
+                tc.district,
+
+                c.id AS course_db_id,
+
+                c.course_id,
+
+                c.name AS course_name,
+
+                c.sector,
+
+                COUNT(DISTINCT e.trainee_id)::int
+                    AS enrolled,
+
+                COUNT(DISTINCT e.trainee_id)
+                    FILTER (
+                        WHERE emp.status = 'Employed'
+                    )::int
+                    AS employed,
+
+                COUNT(DISTINCT e.trainee_id)
+                    FILTER (
+                        WHERE emp.verification_source = 'EPFO'
+                    )::int
+                    AS epfo_verified,
+
+                COUNT(DISTINCT e.trainee_id)
+                    FILTER (
+                        WHERE emp.verification_source = 'WhatsApp'
+                    )::int
+                    AS whatsapp_verified,
+
+                COALESCE(
+
+                    AVG(emp.salary)
+                    FILTER (
+                        WHERE emp.salary IS NOT NULL
+                        AND emp.status = 'Employed'
+                    ),
+
+                    0
+
+                )::numeric AS avg_salary
+
+            FROM training_centers tc
+
+            LEFT JOIN enrollments e
+                ON e.center_id = tc.id
+
+            LEFT JOIN courses c
+                ON c.id = e.course_id
+
+            LEFT JOIN employment emp
+                ON emp.trainee_id = e.trainee_id
+
+            ${whereClause}
+
+            GROUP BY
+
+                tc.id,
+                tc.center_id,
+                tc.name,
+                tc.district,
+                c.id,
+                c.course_id,
+                c.name,
+                c.sector
+
+            ORDER BY
+
+                tc.name,
+                c.name
+
+        `, params);
+
+
+        // Transform course rows
+        const courses = result.rows.map(row => {
+
+            const enrolled =
+                Number(row.enrolled || 0);
+
+            const employed =
+                Number(row.employed || 0);
+
+            const placementRate =
+                enrolled > 0
+
+                    ? Number(
+                        (
+                            employed /
+                            enrolled *
+                            100
+                        ).toFixed(1)
+                    )
+
+                    : 0;
+
+
+            return {
+
+                centerId:
+                    row.center_id,
+
+                centerName:
+                    row.center_name,
+
+                district:
+                    row.district,
+
+                courseId:
+                    row.course_id,
+
+                courseName:
+                    row.course_name || "Unknown Course",
+
+                sector:
+                    row.sector || "Unknown",
+
+                enrolled,
+
+                employed,
+
+                placementRate,
+
+                epfoVerified:
+                    Number(
+                        row.epfo_verified || 0
+                    ),
+
+                whatsappVerified:
+                    Number(
+                        row.whatsapp_verified || 0
+                    ),
+
+                avgSalary:
+                    Math.round(
+                        Number(
+                            row.avg_salary || 0
+                        )
+                    )
+
+            };
+
+        });
+
+
+        // Overall totals
+        const totalEnrolled =
+            courses.reduce(
+
+                (sum, course) =>
+                    sum + course.enrolled,
+
+                0
+
+            );
+
+
+        const totalEmployed =
+            courses.reduce(
+
+                (sum, course) =>
+                    sum + course.employed,
+
+                0
+
+            );
+
+
+        const totalEpfo =
+            courses.reduce(
+
+                (sum, course) =>
+                    sum + course.epfoVerified,
+
+                0
+
+            );
+
+
+        const totalWhatsapp =
+            courses.reduce(
+
+                (sum, course) =>
+                    sum + course.whatsappVerified,
+
+                0
+
+            );
+
+
+        const placementRate =
+            totalEnrolled > 0
+
+                ? Number(
+
+                    (
+                        totalEmployed /
+                        totalEnrolled *
+                        100
+                    ).toFixed(1)
+
+                )
+
+                : 0;
+
+
+        // Weighted average salary
+        const salaryWeightedTotal =
+            courses.reduce(
+
+                (sum, course) =>
+
+                    sum +
+                    (
+                        course.avgSalary *
+                        course.employed
+                    ),
+
+                0
+
+            );
+
+
+        const avgSalary =
+            totalEmployed > 0
+
+                ? Math.round(
+                    salaryWeightedTotal /
+                    totalEmployed
+                )
+
+                : 0;
+
+
+        res.json({
+
+            success: true,
+
+            summary: {
+
+                enrolled:
+                    totalEnrolled,
+
+                employed:
+                    totalEmployed,
+
+                placementRate,
+
+                avgSalary,
+
+                epfoVerified:
+                    totalEpfo,
+
+                whatsappVerified:
+                    totalWhatsapp
+
+            },
+
+            courses
+
+        });
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Training provider API error:",
+            error
+        );
+
+        res.status(500).json({
+
+            success: false,
+
+            error: error.message
+
+        });
+
+    }
+
+});
+
 // ================================
 // START SERVER
 // ================================
