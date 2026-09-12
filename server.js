@@ -5,16 +5,13 @@ const path = require("path");
 const fs = require("fs");
 const { Pool } = require("pg");
 
-const { Client, LocalAuth } = require("whatsapp-web.js");
-const qrcode = require("qrcode-terminal");
-
 const app = express();
 
 const PORT = process.env.PORT || 5000;
 
-// ================================
+// =====================================================
 // POSTGRESQL DATABASE
-// ================================
+// =====================================================
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -23,13 +20,11 @@ const pool = new Pool({
         : false
 });
 
+// =====================================================
+// WHATSAPP CLOUD API CONFIGURATION
+// =====================================================
 
-// ================================
-// WHATSAPP CONFIGURATION
-// ================================
-
-const ACCESS_TOKEN =
-    process.env.WHATSAPP_ACCESS_TOKEN;
+const ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
 
 const PHONE_NUMBER_ID =
     process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -48,106 +43,247 @@ const TEMPLATE_LANGUAGE =
     process.env.WHATSAPP_TEMPLATE_LANGUAGE ||
     "en";
 
+const whatsappConfigured = Boolean(
+    ACCESS_TOKEN && PHONE_NUMBER_ID
+);
+
+// =====================================================
+// EXPRESS
+// =====================================================
 
 app.use(express.json());
 
-// =====================================================
-// WHATSAPP WEB.JS AUTOMATION
-// =====================================================
-
-const whatsappClient = new Client({
-    authStrategy: new LocalAuth({
-        clientId: "skilltrack"
-    }),
-    puppeteer: {
-        headless: true,
-        args: [
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-gpu"
-        ]
-    }
-});
-
-let whatsappReady = false;
-
-whatsappClient.on("qr", (qr) => {
-    console.log("");
-    console.log("==============================================");
-    console.log("SCAN WHATSAPP QR CODE FROM RENDER LOGS");
-    console.log("WhatsApp > Linked Devices > Link a Device");
-    console.log("==============================================");
-
-    qrcode.generate(qr, { small: true });
-});
-
-whatsappClient.on("ready", () => {
-    whatsappReady = true;
-    console.log("WhatsApp Web.js is READY and CONNECTED.");
-});
-
-whatsappClient.on("authenticated", () => {
-    console.log("WhatsApp authentication successful.");
-});
-
-whatsappClient.on("auth_failure", (message) => {
-    whatsappReady = false;
-    console.error("WhatsApp authentication failed:", message);
-});
-
-whatsappClient.on("disconnected", (reason) => {
-    whatsappReady = false;
-    console.log("WhatsApp disconnected:", reason);
-});
+app.use(express.urlencoded({
+    extended: true
+}));
 
 app.use(express.static(
     path.join(__dirname)
 ));
 
 // =====================================================
-// RECEIVE TRAINEE WHATSAPP REPLIES
+// PHONE NUMBER NORMALIZATION
 // =====================================================
 
-whatsappClient.on("message", async (msg) => {
+function normalizePhone(phone) {
 
-    try {
+    let cleanPhone =
+        String(phone || "")
+            .replace(/\D/g, "");
 
-        if (msg.from.endsWith("@g.us")) {
-            return;
-        }
+    // Indian 10 digit number
+    if (cleanPhone.length === 10) {
+        cleanPhone = "91" + cleanPhone;
+    }
 
-        const phone = msg.from.replace("@c.us", "");
-        const text = (msg.body || "").trim();
+    if (!/^\d{10,15}$/.test(cleanPhone)) {
+        throw new Error(
+            "Invalid phone number. Use a 10-digit Indian number or international format."
+        );
+    }
 
-        if (!text) {
-            return;
-        }
+    return cleanPhone;
+}
 
-        let employmentStatus = "Unknown";
+// =====================================================
+// SEND WHATSAPP TEMPLATE
+// =====================================================
 
-        if (/self[- ]?employed|business|shop|venture/i.test(text)) {
+async function sendWhatsAppTemplate({
+    phone,
+    name,
+    course,
+    sector
+}) {
 
-            employmentStatus = "Self-Employed";
+    if (!ACCESS_TOKEN || !PHONE_NUMBER_ID) {
 
-        } else if (/looking|unemployed|job search|placement assistance|not working/i.test(text)) {
-
-            employmentStatus = "Looking for Placement Assistance";
-
-        } else if (/employed|working|job|placed|salary|joined|company|₹|rs\b/i.test(text)) {
-
-            employmentStatus = "Employed";
-        }
-
-        const verified =
-            employmentStatus === "Employed" ||
-            employmentStatus === "Self-Employed";
-
-        console.log(
-            `[WhatsApp Reply] ${phone} -> ${text}`
+        throw new Error(
+            "WhatsApp Cloud API is not configured. Set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID in Render."
         );
 
-        const traineeResult = await pool.query(
+    }
+
+    const cleanPhone =
+        normalizePhone(phone);
+
+    const url =
+        `https://graph.facebook.com/${GRAPH_VERSION}/${PHONE_NUMBER_ID}/messages`;
+
+    const payload = {
+
+        messaging_product: "whatsapp",
+
+        to: cleanPhone,
+
+        type: "template",
+
+        template: {
+
+            name: TEMPLATE_NAME,
+
+            language: {
+                code: TEMPLATE_LANGUAGE
+            },
+
+            components: [
+
+                {
+                    type: "body",
+
+                    parameters: [
+
+                        {
+                            type: "text",
+                            text: String(
+                                name || "Trainee"
+                            )
+                        },
+
+                        {
+                            type: "text",
+                            text: String(
+                                course || "Skill"
+                            )
+                        },
+
+                        {
+                            type: "text",
+                            text: String(
+                                sector || "Technical"
+                            )
+                        }
+
+                    ]
+
+                }
+
+            ]
+
+        }
+
+    };
+
+    console.log(
+        "[WhatsApp] Sending message to:",
+        cleanPhone
+    );
+
+    const response =
+        await fetch(
+            url,
+            {
+                method: "POST",
+
+                headers: {
+                    "Authorization":
+                        `Bearer ${ACCESS_TOKEN}`,
+
+                    "Content-Type":
+                        "application/json"
+                },
+
+                body:
+                    JSON.stringify(payload)
+            }
+        );
+
+    const data =
+        await response
+            .json()
+            .catch(() => ({}));
+
+    if (!response.ok) {
+
+        console.error(
+            "[WhatsApp] Meta API error:",
+            JSON.stringify(data, null, 2)
+        );
+
+        const metaError =
+            data?.error?.message ||
+            data?.error?.error_user_msg ||
+            `WhatsApp API returned HTTP ${response.status}`;
+
+        const error =
+            new Error(metaError);
+
+        error.metaResponse = data;
+
+        error.httpStatus =
+            response.status;
+
+        throw error;
+
+    }
+
+    console.log(
+        "[WhatsApp] Message sent:",
+        data
+    );
+
+    return {
+
+        phone: cleanPhone,
+
+        messageId:
+            data?.messages?.[0]?.id ||
+            null,
+
+        response: data
+
+    };
+
+}
+
+// =====================================================
+// SAVE WHATSAPP REPLY
+// =====================================================
+
+async function saveWhatsAppReply(
+    phone,
+    text
+) {
+
+    let employmentStatus =
+        "Unknown";
+
+    if (
+        /self[- ]?employed|business|shop|venture/i
+            .test(text)
+    ) {
+
+        employmentStatus =
+            "Self-Employed";
+
+    }
+
+    else if (
+        /looking|unemployed|job search|placement assistance|not working/i
+            .test(text)
+    ) {
+
+        employmentStatus =
+            "Looking for Placement Assistance";
+
+    }
+
+    else if (
+        /employed|working|job|placed|salary|joined|company|₹|rs\b/i
+            .test(text)
+    ) {
+
+        employmentStatus =
+            "Employed";
+
+    }
+
+    const verified =
+        employmentStatus === "Employed" ||
+        employmentStatus === "Self-Employed";
+
+    const traineeResult =
+        await pool.query(
             `
             SELECT id
             FROM trainees
@@ -157,58 +293,70 @@ whatsappClient.on("message", async (msg) => {
             [phone]
         );
 
-        const traineeId =
-            traineeResult.rows.length > 0
-                ? traineeResult.rows[0].id
-                : null;
+    const traineeId =
+        traineeResult.rows.length > 0
+            ? traineeResult.rows[0].id
+            : null;
 
-        await pool.query(
-            `
-            INSERT INTO outcome_responses
-            (
-                trainee_id,
-                phone,
-                response_text,
-                employment_status,
-                source,
-                verified
-            )
-            VALUES ($1, $2, $3, $4, 'WhatsApp', $5)
-            `,
-            [
-                traineeId,
-                phone,
-                text,
-                employmentStatus,
-                verified
-            ]
-        );
+    await pool.query(
+        `
+        INSERT INTO outcome_responses
+        (
+            trainee_id,
+            phone,
+            response_text,
+            employment_status,
+            source,
+            verified
+        )
+        VALUES
+        (
+            $1,
+            $2,
+            $3,
+            $4,
+            'WhatsApp',
+            $5
+        )
+        `,
+        [
+            traineeId,
+            phone,
+            text,
+            employmentStatus,
+            verified
+        ]
+    );
 
-        console.log(
-            `[WhatsApp] Response saved for ${phone}`
-        );
+    console.log(
+        `[WhatsApp] Response saved for ${phone}`
+    );
 
-    } catch (error) {
+}
 
-        console.error(
-            "WhatsApp inbound processing error:",
-            error
-        );
-    }
-
-});
-
-
-// ================================
+// =====================================================
 // DATABASE INITIALIZATION
-// ================================
+// =====================================================
 
 async function initializeDatabase() {
 
     try {
 
         const schemaPath =
-            path.join(__dirname, "schema.sql");
+            path.join(
+                __dirname,
+                "schema.sql"
+            );
+
+        if (!fs.existsSync(schemaPath)) {
+
+            console.warn(
+                "schema.sql not found. Skipping schema initialization."
+            );
+
+            return;
+
+        }
 
         const schema =
             fs.readFileSync(
@@ -222,7 +370,9 @@ async function initializeDatabase() {
             "PostgreSQL database schema initialized successfully"
         );
 
-    } catch (error) {
+    }
+
+    catch (error) {
 
         console.error(
             "Database initialization failed:",
@@ -233,621 +383,964 @@ async function initializeDatabase() {
 
 }
 
-
-// ================================
+// =====================================================
 // HOME
-// ================================
+// =====================================================
 
-app.get("/", (req, res) => {
+app.get(
+    "/",
+    (req, res) => {
 
-    res.sendFile(
-        path.join(__dirname, "index.html")
-    );
+        res.sendFile(
+            path.join(
+                __dirname,
+                "index.html"
+            )
+        );
 
-});
+    }
+);
 
-
-// ================================
+// =====================================================
 // HEALTH CHECK
-// ================================
+// =====================================================
 
-app.get("/api/health", (req, res) => {
+app.get(
+    "/api/health",
+    (req, res) => {
 
-    res.json({
+        res.json({
 
-        success: true,
+            success: true,
 
-        whatsappConfigured:
-            Boolean(
-                ACCESS_TOKEN &&
-                PHONE_NUMBER_ID
-            ),
+            server:
+                "SkillTrack",
 
-        databaseConfigured:
-            Boolean(
-                process.env.DATABASE_URL
-            ),
+            whatsappConfigured:
+                whatsappConfigured,
 
-        template:
-            TEMPLATE_NAME
+            databaseConfigured:
+                Boolean(
+                    process.env.DATABASE_URL
+                ),
 
-    });
+            whatsappMode:
+                "Meta WhatsApp Cloud API",
 
-});
+            template:
+                TEMPLATE_NAME
 
+        });
 
-// ================================
+    }
+);
+
+// =====================================================
 // DATABASE TEST
-// ================================
+// =====================================================
 
-app.get("/api/db-test", async (req, res) => {
+app.get(
+    "/api/db-test",
+    async (req, res) => {
 
-    try {
+        try {
 
-        const result =
-            await pool.query(
-                "SELECT NOW() AS current_time"
+            const result =
+                await pool.query(
+                    "SELECT NOW() AS current_time"
+                );
+
+            res.json({
+
+                success: true,
+
+                message:
+                    "PostgreSQL connected successfully",
+
+                time:
+                    result.rows[0].current_time
+
+            });
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Database connection error:",
+                error
             );
 
-        res.json({
+            res.status(500).json({
 
-            success: true,
-
-            message:
-                "PostgreSQL connected successfully",
-
-            time:
-                result.rows[0].current_time
-
-        });
-
-    } catch (error) {
-
-        console.error(
-            "Database connection error:",
-            error
-        );
-
-        res.status(500).json({
-
-            success: false,
-
-            message:
-                "Database connection failed",
-
-            error:
-                error.message
-
-        });
-
-    }
-
-});
-
-app.get("/api/tables-test", async (req, res) => {
-    try {
-        const result = await pool.query(`
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-            ORDER BY table_name;
-        `);
-
-        res.json({
-            success: true,
-            tables: result.rows.map(row => row.table_name)
-        });
-
-    } catch (error) {
-        console.error("Tables test error:", error);
-
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// ================================
-// SEED PMKVY / MAHARASHTRA DEMO DATA
-// ================================
-
-app.get("/api/seed-demo", async (req, res) => {
-
-    try {
-
-        // Safety check
-        if (req.query.key !== "SKILLTRACK2026") {
-            return res.status(403).json({
                 success: false,
-                error: "Unauthorized"
+
+                message:
+                    "Database connection failed",
+
+                error:
+                    error.message
+
             });
-        }
-
-        // Add scheme column if it does not already exist
-        await pool.query(`
-            ALTER TABLE enrollments
-            ADD COLUMN IF NOT EXISTS scheme VARCHAR(100);
-        `);
-
-        // --------------------------------
-        // 1. TRAINING CENTERS
-        // --------------------------------
-
-        const centers = [
-            ["MSSDS-PUN-001", "Government ITI Aundh", "Pune", "Maharashtra", "A"],
-            ["MSSDS-PUN-002", "Skill Development Centre Pune", "Pune", "Maharashtra", "A"],
-            ["MSSDS-NAG-001", "Government Skill Centre Nagpur", "Nagpur", "Maharashtra", "A"],
-            ["MSSDS-THA-001", "Skill Development Centre Thane", "Thane", "Maharashtra", "B"],
-            ["MSSDS-AUR-001", "Government ITI Chhatrapati Sambhajinagar", "Aurangabad", "Maharashtra", "A"],
-            ["MSSDS-NAS-001", "Skill Development Centre Nashik", "Nashik", "Maharashtra", "B"],
-            ["MSSDS-KOL-001", "Government Skill Centre Kolhapur", "Kolhapur", "Maharashtra", "B"],
-            ["MSSDS-SOL-001", "Skill Development Centre Solapur", "Solapur", "Maharashtra", "B"]
-        ];
-
-        for (const center of centers) {
-
-            await pool.query(`
-                INSERT INTO training_centers
-                (center_id, name, district, state, grade)
-                VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (center_id) DO NOTHING
-            `, center);
 
         }
 
+    }
+);
 
-        // --------------------------------
-        // 2. COURSES
-        // --------------------------------
+// =====================================================
+// TABLE TEST
+// =====================================================
 
-        const courses = [
-            ["CRS-001", "Data Entry Operator", "IT-ITeS", 3],
-            ["CRS-002", "Web Developer", "IT-ITeS", 6],
-            ["CRS-003", "Electrician", "Electrical", 6],
-            ["CRS-004", "Solar PV Installer", "Green Jobs", 3],
-            ["CRS-005", "Automotive Service Technician", "Automotive", 6],
-            ["CRS-006", "General Duty Assistant", "Healthcare", 3],
-            ["CRS-007", "Retail Sales Associate", "Retail", 3],
-            ["CRS-008", "CNC Machine Operator", "Capital Goods", 6],
-            ["CRS-009", "Beauty Therapist", "Beauty & Wellness", 3],
-            ["CRS-010", "Warehouse Associate", "Logistics", 3]
-        ];
+app.get(
+    "/api/tables-test",
+    async (req, res) => {
 
-        for (const course of courses) {
+        try {
 
-            await pool.query(`
-                INSERT INTO courses
-                (course_id, name, sector, duration_months)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (course_id) DO NOTHING
-            `, course);
+            const result =
+                await pool.query(`
+                    SELECT table_name
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                    ORDER BY table_name;
+                `);
 
-        }
+            res.json({
 
+                success: true,
 
-        // --------------------------------
-        // 3. TRAINEES
-        // --------------------------------
+                tables:
+                    result.rows.map(
+                        row => row.table_name
+                    )
 
-        const districts = [
-            "Pune",
-            "Nagpur",
-            "Thane",
-            "Aurangabad",
-            "Nashik",
-            "Kolhapur",
-            "Solapur"
-        ];
-
-        const firstNames = [
-            "Aarav",
-            "Aditya",
-            "Amit",
-            "Anjali",
-            "Ananya",
-            "Arjun",
-            "Akash",
-            "Priya",
-            "Rahul",
-            "Riya",
-            "Sneha",
-            "Rohit",
-            "Vikas",
-            "Neha",
-            "Pooja",
-            "Karan",
-            "Sakshi",
-            "Vivek",
-            "Nikhil",
-            "Shreya"
-        ];
-
-        for (let i = 1; i <= 500; i++) {
-
-            const traineeId =
-                `MH-SKILL-${String(i).padStart(5, "0")}`;
-
-            const name =
-                firstNames[(i - 1) % firstNames.length];
-
-            const district =
-                districts[(i - 1) % districts.length];
-
-            const phone =
-                `91${7000000000 + i}`;
-
-            await pool.query(`
-                INSERT INTO trainees
-                (trainee_id, name, phone, district, registration_date)
-                VALUES
-                ($1, $2, $3, $4, CURRENT_DATE - (($5 % 365)::int))
-                ON CONFLICT (trainee_id) DO NOTHING
-            `, [
-                traineeId,
-                `${name} ${1000 + i}`,
-                phone,
-                district,
-                i
-            ]);
+            });
 
         }
 
+        catch (error) {
 
-        // --------------------------------
-        // 4. ENROLLMENTS
-        // --------------------------------
+            console.error(
+                "Tables test error:",
+                error
+            );
 
-        const schemes = [
-            "PMKUVA",
-            "PMKUVA",
-            "PMKUVA",
-            "PM-GKVK",
-            "DPC",
-            "ACKCK",
-            "SANKALP",
-            "PMKVY"
-        ];
+            res.status(500).json({
 
-        for (let i = 1; i <= 500; i++) {
+                success: false,
 
-            const traineeId =
-                `MH-SKILL-${String(i).padStart(5, "0")}`;
+                error:
+                    error.message
 
-            const course =
-                courses[(i - 1) % courses.length];
-
-            const center =
-                centers[(i - 1) % centers.length];
-
-            const scheme =
-                schemes[(i - 1) % schemes.length];
-
-            const status =
-                i % 10 === 0
-                    ? "Enrolled"
-                    : i % 7 === 0
-                        ? "In Progress"
-                        : "Completed";
-
-            await pool.query(`
-                INSERT INTO enrollments
-                (
-                    trainee_id,
-                    course_id,
-                    center_id,
-                    batch_id,
-                    enrollment_date,
-                    completion_date,
-                    status,
-                    scheme
-                )
-                SELECT
-                    t.id,
-                    c.id,
-                    tc.id,
-                    $1,
-                    CURRENT_DATE - (($2 % 300)::int),
-                    CASE
-                        WHEN $3 = 'Completed'
-                        THEN CURRENT_DATE - (($2 % 150)::int)
-                        ELSE NULL
-                    END,
-                    $3,
-                    $4
-                FROM trainees t
-                CROSS JOIN courses c
-                CROSS JOIN training_centers tc
-                WHERE
-                    t.trainee_id = $5
-                    AND c.course_id = $6
-                    AND tc.center_id = $7
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM enrollments e
-                    WHERE e.trainee_id = t.id
-                )
-            `, [
-                `BATCH-${Math.floor((i - 1) / 25) + 1}`,
-                i,
-                status,
-                scheme,
-                traineeId,
-                course[0],
-                center[0]
-            ]);
+            });
 
         }
 
+    }
+);
 
-        // --------------------------------
-        // 5. EMPLOYMENT OUTCOMES
-        // --------------------------------
+// =====================================================
+// SEED DEMO DATA
+// =====================================================
 
-        const companies = [
-            "TechServe Solutions",
-            "Maharashtra AutoWorks",
-            "Green Energy Services",
-            "HealthCare Plus",
-            "Digital Retail India",
-            "Pune Industrial Systems",
-            "LogiMove India"
-        ];
+app.get(
+    "/api/seed-demo",
+    async (req, res) => {
 
-        const roles = [
-            "Junior Web Developer",
-            "Data Entry Operator",
-            "Automotive Technician",
-            "Solar Technician",
-            "Healthcare Assistant",
-            "Retail Associate",
-            "CNC Operator"
-        ];
+        try {
 
-        const verificationSources = [
-            "Employer",
-            "WhatsApp",
-            "EPFO",
-            "Employer",
-            "WhatsApp"
-        ];
+            if (
+                req.query.key !==
+                "SKILLTRACK2026"
+            ) {
 
-        for (let i = 1; i <= 500; i++) {
+                return res.status(403).json({
 
-            // Approximately 68% employed
-            if (i % 100 > 67) {
-                continue;
+                    success: false,
+
+                    error:
+                        "Unauthorized"
+
+                });
+
             }
 
-            const traineeId =
-                `MH-SKILL-${String(i).padStart(5, "0")}`;
-
-            const salary =
-                10000 + ((i * 137) % 18000);
-
-            const company =
-                companies[(i - 1) % companies.length];
-
-            const role =
-                roles[(i - 1) % roles.length];
-
-            const source =
-                verificationSources[(i - 1) % verificationSources.length];
-
             await pool.query(`
-                INSERT INTO employment
-                (
-                    trainee_id,
-                    status,
-                    company,
-                    role,
-                    salary,
-                    employment_date,
-                    verification_source,
-                    verified
-                )
-                SELECT
-                    id,
-                    'Employed',
-                    $1,
-                    $2,
-                    $3,
-                    CURRENT_DATE - (($4 % 120)::int),
-                    $5,
-                    TRUE
-                FROM trainees
-                WHERE trainee_id = $6
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM employment e
-                    WHERE e.trainee_id = trainees.id
-                )
-            `, [
-                company,
-                role,
-                salary,
-                i,
-                source,
-                traineeId
-            ]);
+                ALTER TABLE enrollments
+                ADD COLUMN IF NOT EXISTS
+                scheme VARCHAR(100);
+            `);
+
+            // =================================================
+            // TRAINING CENTERS
+            // =================================================
+
+            const centers = [
+
+                [
+                    "MSSDS-PUN-001",
+                    "Government ITI Aundh",
+                    "Pune",
+                    "Maharashtra",
+                    "A"
+                ],
+
+                [
+                    "MSSDS-PUN-002",
+                    "Skill Development Centre Pune",
+                    "Pune",
+                    "Maharashtra",
+                    "A"
+                ],
+
+                [
+                    "MSSDS-NAG-001",
+                    "Government Skill Centre Nagpur",
+                    "Nagpur",
+                    "Maharashtra",
+                    "A"
+                ],
+
+                [
+                    "MSSDS-THA-001",
+                    "Skill Development Centre Thane",
+                    "Thane",
+                    "Maharashtra",
+                    "B"
+                ],
+
+                [
+                    "MSSDS-AUR-001",
+                    "Government ITI Chhatrapati Sambhajinagar",
+                    "Aurangabad",
+                    "Maharashtra",
+                    "A"
+                ],
+
+                [
+                    "MSSDS-NAS-001",
+                    "Skill Development Centre Nashik",
+                    "Nashik",
+                    "Maharashtra",
+                    "B"
+                ],
+
+                [
+                    "MSSDS-KOL-001",
+                    "Government Skill Centre Kolhapur",
+                    "Kolhapur",
+                    "Maharashtra",
+                    "B"
+                ],
+
+                [
+                    "MSSDS-SOL-001",
+                    "Skill Development Centre Solapur",
+                    "Solapur",
+                    "Maharashtra",
+                    "B"
+                ]
+
+            ];
+
+            for (
+                const center of centers
+            ) {
+
+                await pool.query(
+                    `
+                    INSERT INTO training_centers
+                    (
+                        center_id,
+                        name,
+                        district,
+                        state,
+                        grade
+                    )
+                    VALUES
+                    (
+                        $1,
+                        $2,
+                        $3,
+                        $4,
+                        $5
+                    )
+                    ON CONFLICT (center_id)
+                    DO NOTHING
+                    `,
+                    center
+                );
+
+            }
+
+            // =================================================
+            // COURSES
+            // =================================================
+
+            const courses = [
+
+                [
+                    "CRS-001",
+                    "Data Entry Operator",
+                    "IT-ITeS",
+                    3
+                ],
+
+                [
+                    "CRS-002",
+                    "Web Developer",
+                    "IT-ITeS",
+                    6
+                ],
+
+                [
+                    "CRS-003",
+                    "Electrician",
+                    "Electrical",
+                    6
+                ],
+
+                [
+                    "CRS-004",
+                    "Solar PV Installer",
+                    "Green Jobs",
+                    3
+                ],
+
+                [
+                    "CRS-005",
+                    "Automotive Service Technician",
+                    "Automotive",
+                    6
+                ],
+
+                [
+                    "CRS-006",
+                    "General Duty Assistant",
+                    "Healthcare",
+                    3
+                ],
+
+                [
+                    "CRS-007",
+                    "Retail Sales Associate",
+                    "Retail",
+                    3
+                ],
+
+                [
+                    "CRS-008",
+                    "CNC Machine Operator",
+                    "Capital Goods",
+                    6
+                ],
+
+                [
+                    "CRS-009",
+                    "Beauty Therapist",
+                    "Beauty & Wellness",
+                    3
+                ],
+
+                [
+                    "CRS-010",
+                    "Warehouse Associate",
+                    "Logistics",
+                    3
+                ]
+
+            ];
+
+            for (
+                const course of courses
+            ) {
+
+                await pool.query(
+                    `
+                    INSERT INTO courses
+                    (
+                        course_id,
+                        name,
+                        sector,
+                        duration_months
+                    )
+                    VALUES
+                    (
+                        $1,
+                        $2,
+                        $3,
+                        $4
+                    )
+                    ON CONFLICT (course_id)
+                    DO NOTHING
+                    `,
+                    course
+                );
+
+            }
+
+            // =================================================
+            // TRAINEES
+            // =================================================
+
+            const districts = [
+
+                "Pune",
+                "Nagpur",
+                "Thane",
+                "Aurangabad",
+                "Nashik",
+                "Kolhapur",
+                "Solapur"
+
+            ];
+
+            const firstNames = [
+
+                "Aarav",
+                "Aditya",
+                "Amit",
+                "Anjali",
+                "Ananya",
+                "Arjun",
+                "Akash",
+                "Priya",
+                "Rahul",
+                "Riya",
+                "Sneha",
+                "Rohit",
+                "Vikas",
+                "Neha",
+                "Pooja",
+                "Karan",
+                "Sakshi",
+                "Vivek",
+                "Nikhil",
+                "Shreya"
+
+            ];
+
+            for (
+                let i = 1;
+                i <= 500;
+                i++
+            ) {
+
+                const traineeId =
+                    `MH-SKILL-${String(i).padStart(5, "0")}`;
+
+                const name =
+                    firstNames[
+                        (i - 1) %
+                        firstNames.length
+                    ];
+
+                const district =
+                    districts[
+                        (i - 1) %
+                        districts.length
+                    ];
+
+                const phone =
+                    `91${7000000000 + i}`;
+
+                await pool.query(
+                    `
+                    INSERT INTO trainees
+                    (
+                        trainee_id,
+                        name,
+                        phone,
+                        district,
+                        registration_date
+                    )
+                    VALUES
+                    (
+                        $1,
+                        $2,
+                        $3,
+                        $4,
+                        CURRENT_DATE -
+                        (($5 % 365)::int)
+                    )
+                    ON CONFLICT (trainee_id)
+                    DO NOTHING
+                    `,
+                    [
+                        traineeId,
+                        `${name} ${1000 + i}`,
+                        phone,
+                        district,
+                        i
+                    ]
+                );
+
+            }
+
+            // =================================================
+            // ENROLLMENTS
+            // =================================================
+
+            const schemes = [
+
+                "PMKUVA",
+                "PMKUVA",
+                "PMKUVA",
+                "PM-GKVK",
+                "DPC",
+                "ACKCK",
+                "SANKALP",
+                "PMKVY"
+
+            ];
+
+            for (
+                let i = 1;
+                i <= 500;
+                i++
+            ) {
+
+                const traineeId =
+                    `MH-SKILL-${String(i).padStart(5, "0")}`;
+
+                const course =
+                    courses[
+                        (i - 1) %
+                        courses.length
+                    ];
+
+                const center =
+                    centers[
+                        (i - 1) %
+                        centers.length
+                    ];
+
+                const scheme =
+                    schemes[
+                        (i - 1) %
+                        schemes.length
+                    ];
+
+                const status =
+                    i % 10 === 0
+                        ? "Enrolled"
+                        : i % 7 === 0
+                            ? "In Progress"
+                            : "Completed";
+
+                await pool.query(
+                    `
+                    INSERT INTO enrollments
+                    (
+                        trainee_id,
+                        course_id,
+                        center_id,
+                        batch_id,
+                        enrollment_date,
+                        completion_date,
+                        status,
+                        scheme
+                    )
+                    SELECT
+                        t.id,
+                        c.id,
+                        tc.id,
+                        $1,
+                        CURRENT_DATE -
+                        (($2 % 300)::int),
+                        CASE
+                            WHEN $3 = 'Completed'
+                            THEN CURRENT_DATE -
+                            (($2 % 150)::int)
+                            ELSE NULL
+                        END,
+                        $3,
+                        $4
+                    FROM trainees t
+                    CROSS JOIN courses c
+                    CROSS JOIN training_centers tc
+                    WHERE
+                        t.trainee_id = $5
+                        AND c.course_id = $6
+                        AND tc.center_id = $7
+                    ON CONFLICT DO NOTHING
+                    `,
+                    [
+                        `BATCH-${String(i).padStart(4, "0")}`,
+                        i,
+                        status,
+                        scheme,
+                        traineeId,
+                        course[0],
+                        center[0]
+                    ]
+                );
+
+            }
+
+            res.json({
+
+                success: true,
+
+                message:
+                    "Demo data seeded successfully"
+
+            });
 
         }
 
+        catch (error) {
 
-        // --------------------------------
-        // 6. JOB DEMAND
-        // --------------------------------
+            console.error(
+                "Seed demo error:",
+                error
+            );
 
-        const demands = [
-            ["Tata Auto Systems", "Automotive Technician", "Automotive", 180, "Pune"],
-            ["Tech Mahindra", "Junior Web Developer", "IT-ITeS", 250, "Pune"],
-            ["Infosys", "Data Entry Operator", "IT-ITeS", 140, "Pune"],
-            ["Adani Green", "Solar Technician", "Green Jobs", 220, "Nagpur"],
-            ["Apollo Partner Network", "Healthcare Assistant", "Healthcare", 160, "Thane"],
-            ["RetailMart India", "Retail Associate", "Retail", 190, "Pune"],
-            ["Industrial Solutions", "CNC Operator", "Capital Goods", 120, "Aurangabad"],
-            ["LogiMove India", "Warehouse Associate", "Logistics", 210, "Nashik"]
-        ];
+            res.status(500).json({
 
-        for (const demand of demands) {
+                success: false,
 
-            await pool.query(`
-                INSERT INTO job_demand
-                (company, role, sector, openings, district, source)
-                SELECT
-                    $1::VARCHAR,
-                    $2::VARCHAR,
-                    $3::VARCHAR,
-                    $4::INTEGER,
-                    $5::VARCHAR,
-                    'Demo job-market dataset'
-                WHERE NOT EXISTS (
-                    SELECT 1
-                    FROM job_demand
-                    WHERE company = $1::VARCHAR
-                    AND role = $2::VARCHAR
-                    AND district = $5::VARCHAR
-                )
-            `, demand);
+                error:
+                    error.message
+
+            });
 
         }
 
+    }
+);
 
-        // --------------------------------
-        // RESULT
-        // --------------------------------
+// =====================================================
+// SEND SURVEY
+// =====================================================
 
-        const counts = await pool.query(`
-            SELECT
-                (SELECT COUNT(*) FROM trainees) AS trainees,
-                (SELECT COUNT(*) FROM training_centers) AS training_centers,
-                (SELECT COUNT(*) FROM courses) AS courses,
-                (SELECT COUNT(*) FROM enrollments) AS enrollments,
-                (SELECT COUNT(*) FROM employment) AS employment,
-                (SELECT COUNT(*) FROM job_demand) AS job_demand
-        `);
+app.post(
+    "/api/send-survey",
+    async (req, res) => {
+
+        try {
+
+            const {
+                name,
+                phone,
+                course,
+                sector
+            } = req.body;
+
+            // ---------------------------------------------
+            // VALIDATION
+            // ---------------------------------------------
+
+            if (!name) {
+
+                return res.status(400).json({
+
+                    success: false,
+
+                    error:
+                        "Name is required"
+
+                });
+
+            }
+
+            if (!phone) {
+
+                return res.status(400).json({
+
+                    success: false,
+
+                    error:
+                        "Phone number is required"
+
+                });
+
+            }
+
+            const cleanPhone =
+                normalizePhone(phone);
+
+            // ---------------------------------------------
+            // CHECK TRAINEE
+            // ---------------------------------------------
+
+            let traineeId = null;
+
+            try {
+
+                const traineeResult =
+                    await pool.query(
+                        `
+                        SELECT id
+                        FROM trainees
+                        WHERE phone = $1
+                        LIMIT 1
+                        `,
+                        [cleanPhone]
+                    );
+
+                if (
+                    traineeResult.rows.length
+                ) {
+
+                    traineeId =
+                        traineeResult.rows[0].id;
+
+                }
+
+            }
+
+            catch (dbLookupError) {
+
+                console.warn(
+                    "Trainee lookup failed:",
+                    dbLookupError.message
+                );
+
+            }
+
+            // ---------------------------------------------
+            // SEND WHATSAPP
+            // ---------------------------------------------
+
+            const whatsappResult =
+                await sendWhatsAppTemplate({
+
+                    phone: cleanPhone,
+
+                    name,
+
+                    course:
+                        course || "Skill Training",
+
+                    sector:
+                        sector || "General"
+
+                });
+
+            // ---------------------------------------------
+            // OPTIONAL MESSAGE LOG
+            // ---------------------------------------------
+
+            try {
+
+                await pool.query(
+                    `
+                    CREATE TABLE IF NOT EXISTS
+                    whatsapp_messages
+                    (
+                        id SERIAL PRIMARY KEY,
+                        trainee_id INTEGER,
+                        phone VARCHAR(30),
+                        message_type VARCHAR(50),
+                        template_name VARCHAR(255),
+                        status VARCHAR(50),
+                        whatsapp_message_id VARCHAR(255),
+                        error TEXT,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        sent_at TIMESTAMP
+                    )
+                    `
+                );
+
+                await pool.query(
+                    `
+                    INSERT INTO whatsapp_messages
+                    (
+                        trainee_id,
+                        phone,
+                        message_type,
+                        template_name,
+                        status,
+                        whatsapp_message_id,
+                        sent_at
+                    )
+                    VALUES
+                    (
+                        $1,
+                        $2,
+                        'template',
+                        $3,
+                        'sent',
+                        $4,
+                        NOW()
+                    )
+                    `,
+                    [
+                        traineeId,
+                        cleanPhone,
+                        TEMPLATE_NAME,
+                        whatsappResult.messageId
+                    ]
+                );
+
+            }
+
+            catch (logError) {
+
+                console.warn(
+                    "WhatsApp log failed:",
+                    logError.message
+                );
+
+            }
+
+            // ---------------------------------------------
+            // RESPONSE
+            // ---------------------------------------------
+
+            return res.json({
+
+                success: true,
+
+                message:
+                    "WhatsApp message sent successfully",
+
+                phone:
+                    cleanPhone,
+
+                whatsappMessageId:
+                    whatsappResult.messageId
+
+            });
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Send survey error:",
+                error
+            );
+
+            // Try to record failed message
+            try {
+
+                const cleanPhone =
+                    req.body?.phone
+                        ? normalizePhone(
+                            req.body.phone
+                        )
+                        : null;
+
+                await pool.query(
+                    `
+                    CREATE TABLE IF NOT EXISTS
+                    whatsapp_messages
+                    (
+                        id SERIAL PRIMARY KEY,
+                        trainee_id INTEGER,
+                        phone VARCHAR(30),
+                        message_type VARCHAR(50),
+                        template_name VARCHAR(255),
+                        status VARCHAR(50),
+                        whatsapp_message_id VARCHAR(255),
+                        error TEXT,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        sent_at TIMESTAMP
+                    )
+                    `
+                );
+
+                await pool.query(
+                    `
+                    INSERT INTO whatsapp_messages
+                    (
+                        phone,
+                        message_type,
+                        template_name,
+                        status,
+                        error
+                    )
+                    VALUES
+                    (
+                        $1,
+                        'template',
+                        $2,
+                        'failed',
+                        $3
+                    )
+                    `,
+                    [
+                        cleanPhone,
+                        TEMPLATE_NAME,
+                        error.message
+                    ]
+                );
+
+            }
+
+            catch (logError) {
+
+                console.warn(
+                    "Failed-message logging error:",
+                    logError.message
+                );
+
+            }
+
+            return res.status(500).json({
+
+                success: false,
+
+                message:
+                    "Failed to send WhatsApp message",
+
+                error:
+                    error.message
+
+            });
+
+        }
+
+    }
+);
+
+// =====================================================
+// WHATSAPP STATUS
+// =====================================================
+
+app.get(
+    "/api/whatsapp-status",
+    (req, res) => {
 
         res.json({
 
             success: true,
 
-            message:
-                "PMKVY/Maharashtra-based synthetic demo data inserted successfully",
+            configured:
+                whatsappConfigured,
 
-            warning:
-                "Individual trainee records are synthetic and must not be presented as actual government beneficiary records.",
+            status:
+                whatsappConfigured
+                    ? "cloud_api_configured"
+                    : "not_configured",
 
-            counts:
-                counts.rows[0]
+            mode:
+                "Meta WhatsApp Cloud API",
 
-        });
+            phoneNumberId:
+                PHONE_NUMBER_ID
+                    ? "configured"
+                    : "missing",
 
-    } catch (error) {
+            accessToken:
+                ACCESS_TOKEN
+                    ? "configured"
+                    : "missing",
 
-        console.error(
-            "Demo data seed error:",
-            error
-        );
-
-        res.status(500).json({
-
-            success: false,
-
-            error:
-                error.message
+            template:
+                TEMPLATE_NAME
 
         });
 
     }
+);
 
-});
-
-// ================================
-// SEND WHATSAPP MESSAGE
-// ================================
-
-app.post("/api/send-survey", async (req, res) => {
-    try {
-
-        const {
-            name,
-            phone,
-            course,
-            sector
-        } = req.body;
-
-        if (!phone) {
-            return res.status(400).json({
-                success: false,
-                error: "Phone number is required"
-            });
-        }
-
-        if (!whatsappReady) {
-            return res.status(503).json({
-                success: false,
-                error: "WhatsApp is not connected. Scan the QR code from Render logs."
-            });
-        }
-
-        let cleanPhone = String(phone).replace(/\D/g, "");
-
-        if (cleanPhone.length === 10) {
-            cleanPhone = "91" + cleanPhone;
-        }
-
-        const chatId = `${cleanPhone}@c.us`;
-
-        const message =
-`Namaskar ${name || "Trainee"},
-
-Greetings from KaushalSetu Maharashtra Skill Mission!
-
-We noticed you completed the *${course || "Skill"}* course in the *${sector || "Technical"}* sector.
-
-Please reply with your current employment status:
-
-1. Employed - Company name & Monthly salary
-2. Self-Employed - Shop / Venture details
-3. Looking for Placement Assistance
-
-Your response helps update your skill training outcome record.
-
-Thank you,
-KaushalSetu`;
-
-        await whatsappClient.sendMessage(
-            chatId,
-            message
-        );
-
-        console.log(
-            `[WhatsApp] Survey sent to ${cleanPhone}`
-        );
-
-        res.json({
-            success: true,
-            message: `Survey dispatched to ${cleanPhone}`
-        });
-
-    } catch (error) {
-
-        console.error(
-            "WhatsApp dispatch failed:",
-            error
-        );
-
-        res.status(500).json({
-            success: false,
-            error: "Failed to send WhatsApp message",
-            detail: error.message
-        });
-    }
-});
-
-// ================================
-// WHATSAPP WEBHOOK VERIFICATION
-// ================================
+// =====================================================
+// META WHATSAPP WEBHOOK VERIFICATION
+// =====================================================
 
 app.get(
     "/webhook",
@@ -861,7 +1354,6 @@ app.get(
 
         const challenge =
             req.query["hub.challenge"];
-
 
         if (
             mode === "subscribe" &&
@@ -878,529 +1370,858 @@ app.get(
 
         }
 
+        console.warn(
+            "WhatsApp webhook verification failed"
+        );
 
-        return res.sendStatus(403);
+        return res
+            .sendStatus(403);
 
     }
 );
 
-
-// ================================
-// WHATSAPP WEBHOOK
-// ================================
+// =====================================================
+// RECEIVE META WHATSAPP WEBHOOK
+// =====================================================
 
 app.post(
     "/webhook",
-    (req, res) => {
+    async (req, res) => {
 
         try {
 
-            const body =
-                req.body;
-
-
             console.log(
-                "WhatsApp webhook received:"
-            );
-
-
-            console.log(
+                "[WhatsApp Webhook]",
                 JSON.stringify(
-                    body,
+                    req.body,
                     null,
                     2
                 )
             );
 
+            const entry =
+                req.body?.entry || [];
+
+            for (
+                const entryItem
+                of entry
+            ) {
+
+                const changes =
+                    entryItem.changes || [];
+
+                for (
+                    const change
+                    of changes
+                ) {
+
+                    const value =
+                        change.value;
+
+                    // -----------------------------------------
+                    // Incoming messages
+                    // -----------------------------------------
+
+                    const messages =
+                        value?.messages || [];
+
+                    for (
+                        const message
+                        of messages
+                    ) {
+
+                        if (
+                            message.type !==
+                            "text"
+                        ) {
+
+                            continue;
+
+                        }
+
+                        const phone =
+                            message.from;
+
+                        const text =
+                            message.text?.body ||
+                            "";
+
+                        if (
+                            phone &&
+                            text
+                        ) {
+
+                            await saveWhatsAppReply(
+                                phone,
+                                text
+                            );
+
+                        }
+
+                    }
+
+                    // -----------------------------------------
+                    // Message status updates
+                    // -----------------------------------------
+
+                    const statuses =
+                        value?.statuses || [];
+
+                    for (
+                        const status
+                        of statuses
+                    ) {
+
+                        const messageId =
+                            status.id;
+
+                        const messageStatus =
+                            status.status;
+
+                        console.log(
+                            `[WhatsApp] ${messageId} -> ${messageStatus}`
+                        );
+
+                        try {
+
+                            await pool.query(
+                                `
+                                CREATE TABLE IF NOT EXISTS
+                                whatsapp_messages
+                                (
+                                    id SERIAL PRIMARY KEY,
+                                    trainee_id INTEGER,
+                                    phone VARCHAR(30),
+                                    message_type VARCHAR(50),
+                                    template_name VARCHAR(255),
+                                    status VARCHAR(50),
+                                    whatsapp_message_id VARCHAR(255),
+                                    error TEXT,
+                                    created_at TIMESTAMP DEFAULT NOW(),
+                                    sent_at TIMESTAMP
+                                )
+                                `
+                            );
+
+                            await pool.query(
+                                `
+                                UPDATE whatsapp_messages
+                                SET status = $1
+                                WHERE whatsapp_message_id = $2
+                                `,
+                                [
+                                    messageStatus,
+                                    messageId
+                                ]
+                            );
+
+                        }
+
+                        catch (statusDbError) {
+
+                            console.warn(
+                                "Unable to update WhatsApp status:",
+                                statusDbError.message
+                            );
+
+                        }
+
+                    }
+
+                }
+
+            }
 
             return res.sendStatus(200);
 
+        }
 
-        } catch (error) {
+        catch (error) {
 
             console.error(
+                "WhatsApp webhook processing error:",
                 error
             );
 
-            return res.sendStatus(500);
+            // Meta expects a successful response quickly.
+            return res.sendStatus(200);
 
         }
 
     }
 );
 
-app.get("/api/government-metrics", async (req, res) => {
-  try {
-    const district = req.query.district || "All Maharashtra";
-    const scheme = req.query.scheme || "All Schemes";
-
-    let traineeWhere = "";
-    let enrollmentWhere = "";
-    const traineeParams = [];
-    const enrollmentParams = [];
-
-    if (district !== "All Maharashtra") {
-      traineeParams.push(district);
-      traineeWhere = `WHERE district = $${traineeParams.length}`;
-
-      enrollmentParams.push(district);
-      enrollmentWhere = `
-        WHERE trainee_id IN (
-          SELECT id FROM trainees WHERE district = $${enrollmentParams.length}
-        )
-      `;
-    }
-
-    if (scheme !== "All Schemes") {
-      enrollmentParams.push(scheme);
-      enrollmentWhere +=
-        (enrollmentWhere ? " AND " : " WHERE ") +
-        `scheme = $${enrollmentParams.length}`;
-    }
-
-    // Total trainees
-    const traineeResult = await pool.query(
-      `SELECT COUNT(*)::int AS total FROM trainees ${traineeWhere}`,
-      traineeParams
-    );
-
-    // Employment / placement
-    const employmentResult = await pool.query(`
-      SELECT
-        COUNT(*) FILTER (WHERE e.status = 'Employed')::int AS employed,
-        COALESCE(AVG(e.salary) FILTER (WHERE e.salary IS NOT NULL), 0)::numeric AS avg_salary
-      FROM employment e
-      JOIN trainees t ON t.id = e.trainee_id
-      ${district !== "All Maharashtra" ? "WHERE t.district = $1" : ""}
-    `, district !== "All Maharashtra" ? [district] : []);
-
-    // Verification sources
-    const verificationResult = await pool.query(`
-      SELECT verification_source, COUNT(*)::int AS count
-      FROM employment e
-      JOIN trainees t ON t.id = e.trainee_id
-      ${district !== "All Maharashtra" ? "WHERE t.district = $1" : ""}
-      GROUP BY verification_source
-    `, district !== "All Maharashtra" ? [district] : []);
-
-    // Sector demand
-    const demandResult = await pool.query(`
-      SELECT sector, SUM(openings)::int AS demand
-      FROM job_demand
-      ${district !== "All Maharashtra" ? "WHERE district = $1" : ""}
-      GROUP BY sector
-      ORDER BY demand DESC
-    `, district !== "All Maharashtra" ? [district] : []);
-
-    // Supply by course sector
-    const supplyResult = await pool.query(`
-      SELECT c.sector, COUNT(*)::int AS supply
-      FROM enrollments e
-      JOIN courses c ON c.id = e.course_id
-      JOIN trainees t ON t.id = e.trainee_id
-      ${enrollmentWhere}
-      GROUP BY c.sector
-      ORDER BY supply DESC
-    `, enrollmentParams);
-
-    const total = traineeResult.rows[0].total;
-    const employed = employmentResult.rows[0].employed;
-    const avgSalary = Math.round(
-      Number(employmentResult.rows[0].avg_salary)
-    );
-
-    const placementRate = total > 0
-      ? Number(((employed / total) * 100).toFixed(1))
-      : 0;
-
-    res.json({
-      success: true,
-
-      metrics: {
-        total,
-        placementRate,
-        avgSalary,
-        skillScore: 74
-      },
-
-      verification: verificationResult.rows.map(row => ({
-        source: row.verification_source,
-        count: row.count
-      })),
-
-      demand: demandResult.rows.map(row => ({
-        sector: row.sector,
-        demand: row.demand
-      })),
-
-      supply: supplyResult.rows.map(row => ({
-        sector: row.sector,
-        supply: row.supply
-      }))
-    });
-
-  } catch (error) {
-    console.error("Government metrics error:", error);
-
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
 // =====================================================
-// TRAINING PROVIDER DASHBOARD API
+// GOVERNMENT METRICS API
 // =====================================================
 
-app.get("/api/training-provider", async (req, res) => {
+app.get(
+    "/api/government-metrics",
+    async (req, res) => {
 
-    try {
+        try {
 
-        const centerId =
-            req.query.center_id || null;
+            const district =
+                req.query.district ||
+                "All Maharashtra";
 
-        let whereClause = "";
-        const params = [];
+            const scheme =
+                req.query.scheme ||
+                "All Schemes";
 
+            // ---------------------------------------------
+            // TRAINEE FILTER
+            // ---------------------------------------------
 
-        if (centerId) {
+            const traineeParams = [];
 
-            params.push(centerId);
+            let traineeWhere = "";
 
-            whereClause = `
-                WHERE tc.center_id = $1
-            `;
+            if (
+                district !==
+                "All Maharashtra"
+            ) {
 
-        }
+                traineeParams.push(
+                    district
+                );
 
+                traineeWhere =
+                    `WHERE district = $${traineeParams.length}`;
 
-        const result = await pool.query(`
+            }
 
-            SELECT
+            // ---------------------------------------------
+            // ENROLLMENT FILTER
+            // ---------------------------------------------
 
-                tc.center_id,
-                tc.name AS center_name,
-                tc.district,
+            const enrollmentParams = [];
 
-                c.course_id,
-                c.name AS course_name,
-                c.sector,
+            let enrollmentWhere = "";
 
-                e.batch_id,
+            if (
+                district !==
+                "All Maharashtra"
+            ) {
 
-                COUNT(DISTINCT e.trainee_id)::int
-                    AS enrolled,
+                enrollmentParams.push(
+                    district
+                );
 
-                COUNT(DISTINCT e.trainee_id)
-                    FILTER (
-                        WHERE emp.status = 'Employed'
-                    )::int
-                    AS employed,
+                enrollmentWhere = `
+                    WHERE trainee_id IN
+                    (
+                        SELECT id
+                        FROM trainees
+                        WHERE district = $${enrollmentParams.length}
+                    )
+                `;
 
-                COUNT(DISTINCT e.trainee_id)
-                    FILTER (
-                        WHERE emp.verification_source = 'EPFO'
-                    )::int
-                    AS epfo_verified,
+            }
 
-                COUNT(DISTINCT e.trainee_id)
-                    FILTER (
-                        WHERE emp.verification_source = 'WhatsApp'
-                    )::int
-                    AS whatsapp_verified,
+            if (
+                scheme !==
+                "All Schemes"
+            ) {
 
-                COALESCE(
+                enrollmentParams.push(
+                    scheme
+                );
 
-                    AVG(emp.salary)
-                    FILTER (
-                        WHERE emp.salary IS NOT NULL
-                        AND emp.status = 'Employed'
-                    ),
+                enrollmentWhere +=
+                    (
+                        enrollmentWhere
+                            ? " AND "
+                            : " WHERE "
+                    ) +
+                    `scheme = $${enrollmentParams.length}`;
 
-                    0
+            }
 
-                )::numeric AS avg_salary
+            // ---------------------------------------------
+            // TOTAL TRAINEES
+            // ---------------------------------------------
 
-            FROM training_centers tc
+            const traineeResult =
+                await pool.query(
+                    `
+                    SELECT
+                        COUNT(*)::int AS total
+                    FROM trainees
+                    ${traineeWhere}
+                    `,
+                    traineeParams
+                );
 
-            LEFT JOIN enrollments e
-                ON e.center_id = tc.id
+            // ---------------------------------------------
+            // EMPLOYMENT
+            // ---------------------------------------------
 
-            LEFT JOIN courses c
-                ON c.id = e.course_id
+            const employmentResult =
+                await pool.query(
+                    `
+                    SELECT
 
-            LEFT JOIN employment emp
-                ON emp.trainee_id = e.trainee_id
+                        COUNT(*)
+                        FILTER (
+                            WHERE e.status = 'Employed'
+                        )::int AS employed,
 
-            ${whereClause}
+                        COALESCE(
+                            AVG(e.salary)
+                            FILTER (
+                                WHERE e.salary IS NOT NULL
+                            ),
+                            0
+                        )::numeric AS avg_salary
 
-            GROUP BY
+                    FROM employment e
 
-                tc.center_id,
-                tc.name,
-                tc.district,
+                    JOIN trainees t
+                        ON t.id = e.trainee_id
 
-                c.course_id,
-                c.name,
-                c.sector,
+                    ${
+                        district !==
+                        "All Maharashtra"
+                            ? "WHERE t.district = $1"
+                            : ""
+                    }
+                    `,
+                    district !==
+                    "All Maharashtra"
+                        ? [district]
+                        : []
+                );
 
-                e.batch_id
+            // ---------------------------------------------
+            // VERIFICATION
+            // ---------------------------------------------
 
-            ORDER BY
+            const verificationResult =
+                await pool.query(
+                    `
+                    SELECT
+                        verification_source,
+                        COUNT(*)::int AS count
 
-                tc.name,
-                c.name,
-                e.batch_id
+                    FROM employment e
 
-        `, params);
+                    JOIN trainees t
+                        ON t.id = e.trainee_id
 
+                    ${
+                        district !==
+                        "All Maharashtra"
+                            ? "WHERE t.district = $1"
+                            : ""
+                    }
 
-        const batches = result.rows.map(row => {
+                    GROUP BY
+                        verification_source
+                    `,
+                    district !==
+                    "All Maharashtra"
+                        ? [district]
+                        : []
+                );
 
-            const enrolled =
-                Number(row.enrolled || 0);
+            // ---------------------------------------------
+            // JOB DEMAND
+            // ---------------------------------------------
+
+            const demandResult =
+                await pool.query(
+                    `
+                    SELECT
+                        sector,
+                        SUM(openings)::int AS demand
+
+                    FROM job_demand
+
+                    ${
+                        district !==
+                        "All Maharashtra"
+                            ? "WHERE district = $1"
+                            : ""
+                    }
+
+                    GROUP BY
+                        sector
+
+                    ORDER BY
+                        demand DESC
+                    `,
+                    district !==
+                    "All Maharashtra"
+                        ? [district]
+                        : []
+                );
+
+            // ---------------------------------------------
+            // SUPPLY
+            // ---------------------------------------------
+
+            const supplyResult =
+                await pool.query(
+                    `
+                    SELECT
+                        c.sector,
+                        COUNT(*)::int AS supply
+
+                    FROM enrollments e
+
+                    JOIN courses c
+                        ON c.id = e.course_id
+
+                    JOIN trainees t
+                        ON t.id = e.trainee_id
+
+                    ${enrollmentWhere}
+
+                    GROUP BY
+                        c.sector
+
+                    ORDER BY
+                        supply DESC
+                    `,
+                    enrollmentParams
+                );
+
+            const total =
+                traineeResult.rows[0].total;
 
             const employed =
-                Number(row.employed || 0);
+                employmentResult.rows[0].employed;
+
+            const avgSalary =
+                Math.round(
+                    Number(
+                        employmentResult
+                            .rows[0]
+                            .avg_salary
+                    )
+                );
 
             const placementRate =
-                enrolled > 0
-
+                total > 0
                     ? Number(
                         (
                             employed /
-                            enrolled *
+                            total *
+                            100
+                        ).toFixed(1)
+                    )
+                    : 0;
+
+            res.json({
+
+                success: true,
+
+                metrics: {
+
+                    total,
+
+                    placementRate,
+
+                    avgSalary,
+
+                    skillScore: 74
+
+                },
+
+                verification:
+                    verificationResult.rows
+                        .map(row => ({
+
+                            source:
+                                row.verification_source,
+
+                            count:
+                                row.count
+
+                        })),
+
+                demand:
+                    demandResult.rows
+                        .map(row => ({
+
+                            sector:
+                                row.sector,
+
+                            demand:
+                                row.demand
+
+                        })),
+
+                supply:
+                    supplyResult.rows
+                        .map(row => ({
+
+                            sector:
+                                row.sector,
+
+                            supply:
+                                row.supply
+
+                        }))
+
+            });
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Government metrics error:",
+                error
+            );
+
+            res.status(500).json({
+
+                success: false,
+
+                error:
+                    error.message
+
+            });
+
+        }
+
+    }
+);
+
+// =====================================================
+// TRAINING PROVIDER API
+// =====================================================
+
+app.get(
+    "/api/training-provider",
+    async (req, res) => {
+
+        try {
+
+            const centerId =
+                req.query.center_id ||
+                null;
+
+            let whereClause = "";
+
+            const params = [];
+
+            if (centerId) {
+
+                params.push(
+                    centerId
+                );
+
+                whereClause = `
+                    WHERE tc.center_id = $1
+                `;
+
+            }
+
+            const result =
+                await pool.query(
+                    `
+                    SELECT
+
+                        tc.center_id,
+
+                        tc.name AS center_name,
+
+                        tc.district,
+
+                        c.course_id,
+
+                        c.name AS course_name,
+
+                        c.sector,
+
+                        e.batch_id,
+
+                        COUNT(
+                            DISTINCT e.trainee_id
+                        )::int AS enrolled,
+
+                        COUNT(
+                            DISTINCT e.trainee_id
+                        )
+                        FILTER (
+                            WHERE emp.status = 'Employed'
+                        )::int AS employed,
+
+                        COUNT(
+                            DISTINCT e.trainee_id
+                        )
+                        FILTER (
+                            WHERE emp.verification_source = 'EPFO'
+                        )::int AS epfo_verified,
+
+                        COUNT(
+                            DISTINCT e.trainee_id
+                        )
+                        FILTER (
+                            WHERE emp.verification_source = 'WhatsApp'
+                        )::int AS whatsapp_verified,
+
+                        COALESCE(
+
+                            AVG(emp.salary)
+                            FILTER (
+                                WHERE emp.salary IS NOT NULL
+                                AND emp.status = 'Employed'
+                            ),
+
+                            0
+
+                        )::numeric AS avg_salary
+
+                    FROM training_centers tc
+
+                    LEFT JOIN enrollments e
+                        ON e.center_id = tc.id
+
+                    LEFT JOIN courses c
+                        ON c.id = e.course_id
+
+                    LEFT JOIN employment emp
+                        ON emp.trainee_id =
+                           e.trainee_id
+
+                    ${whereClause}
+
+                    GROUP BY
+
+                        tc.center_id,
+                        tc.name,
+                        tc.district,
+
+                        c.course_id,
+                        c.name,
+                        c.sector,
+
+                        e.batch_id
+
+                    ORDER BY
+
+                        tc.name,
+                        c.name,
+                        e.batch_id
+
+                    `,
+                    params
+                );
+
+            // ---------------------------------------------
+            // FORMAT BATCHES
+            // ---------------------------------------------
+
+            const batches =
+                result.rows.map(row => {
+
+                    const enrolled =
+                        Number(
+                            row.enrolled || 0
+                        );
+
+                    const employed =
+                        Number(
+                            row.employed || 0
+                        );
+
+                    const placementRate =
+                        enrolled > 0
+
+                            ? Number(
+                                (
+                                    employed /
+                                    enrolled *
+                                    100
+                                ).toFixed(1)
+                            )
+
+                            : 0;
+
+                    return {
+
+                        centerId:
+                            row.center_id,
+
+                        centerName:
+                            row.center_name,
+
+                        district:
+                            row.district,
+
+                        courseId:
+                            row.course_id,
+
+                        courseName:
+                            row.course_name ||
+                            "Unknown Course",
+
+                        sector:
+                            row.sector ||
+                            "Unknown",
+
+                        batchId:
+                            row.batch_id ||
+                            "Not Assigned",
+
+                        enrolled,
+
+                        employed,
+
+                        placementRate,
+
+                        epfoVerified:
+                            Number(
+                                row.epfo_verified ||
+                                0
+                            ),
+
+                        whatsappVerified:
+                            Number(
+                                row.whatsapp_verified ||
+                                0
+                            ),
+
+                        avgSalary:
+                            Math.round(
+                                Number(
+                                    row.avg_salary ||
+                                    0
+                                )
+                            )
+
+                    };
+
+                });
+
+            // ---------------------------------------------
+            // SUMMARY
+            // ---------------------------------------------
+
+            const totalEnrolled =
+                batches.reduce(
+                    (sum, batch) =>
+                        sum +
+                        batch.enrolled,
+                    0
+                );
+
+            const totalEmployed =
+                batches.reduce(
+                    (sum, batch) =>
+                        sum +
+                        batch.employed,
+                    0
+                );
+
+            const totalEpfo =
+                batches.reduce(
+                    (sum, batch) =>
+                        sum +
+                        batch.epfoVerified,
+                    0
+                );
+
+            const totalWhatsapp =
+                batches.reduce(
+                    (sum, batch) =>
+                        sum +
+                        batch.whatsappVerified,
+                    0
+                );
+
+            const placementRate =
+                totalEnrolled > 0
+
+                    ? Number(
+                        (
+                            totalEmployed /
+                            totalEnrolled *
                             100
                         ).toFixed(1)
                     )
 
                     : 0;
 
+            const weightedSalary =
+                batches.reduce(
+                    (sum, batch) =>
+                        sum +
+                        (
+                            batch.avgSalary *
+                            batch.employed
+                        ),
+                    0
+                );
 
-            return {
+            const avgSalary =
+                totalEmployed > 0
 
-                centerId:
-                    row.center_id,
-
-                centerName:
-                    row.center_name,
-
-                district:
-                    row.district,
-
-                courseId:
-                    row.course_id,
-
-                courseName:
-                    row.course_name ||
-                    "Unknown Course",
-
-                sector:
-                    row.sector ||
-                    "Unknown",
-
-                batchId:
-                    row.batch_id ||
-                    "Not Assigned",
-
-                enrolled,
-
-                employed,
-
-                placementRate,
-
-                epfoVerified:
-                    Number(
-                        row.epfo_verified || 0
-                    ),
-
-                whatsappVerified:
-                    Number(
-                        row.whatsapp_verified || 0
-                    ),
-
-                avgSalary:
-                    Math.round(
-                        Number(
-                            row.avg_salary || 0
-                        )
+                    ? Math.round(
+                        weightedSalary /
+                        totalEmployed
                     )
 
-            };
+                    : 0;
 
-        });
+            res.json({
 
+                success: true,
 
-        // =================================================
-        // OVERALL SUMMARY
-        // =================================================
+                summary: {
 
-        const totalEnrolled =
-            batches.reduce(
+                    enrolled:
+                        totalEnrolled,
 
-                (sum, batch) =>
-                    sum + batch.enrolled,
+                    employed:
+                        totalEmployed,
 
-                0
+                    placementRate,
 
+                    avgSalary,
+
+                    epfoVerified:
+                        totalEpfo,
+
+                    whatsappVerified:
+                        totalWhatsapp
+
+                },
+
+                batches
+
+            });
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Training provider API error:",
+                error
             );
 
+            res.status(500).json({
 
-        const totalEmployed =
-            batches.reduce(
+                success: false,
 
-                (sum, batch) =>
-                    sum + batch.employed,
+                error:
+                    error.message
 
-                0
+            });
 
-            );
-
-
-        const totalEpfo =
-            batches.reduce(
-
-                (sum, batch) =>
-                    sum + batch.epfoVerified,
-
-                0
-
-            );
-
-
-        const totalWhatsapp =
-            batches.reduce(
-
-                (sum, batch) =>
-                    sum + batch.whatsappVerified,
-
-                0
-
-            );
-
-
-        const placementRate =
-            totalEnrolled > 0
-
-                ? Number(
-
-                    (
-                        totalEmployed /
-                        totalEnrolled *
-                        100
-                    ).toFixed(1)
-
-                )
-
-                : 0;
-
-
-        const weightedSalary =
-            batches.reduce(
-
-                (sum, batch) =>
-
-                    sum +
-                    (
-                        batch.avgSalary *
-                        batch.employed
-                    ),
-
-                0
-
-            );
-
-
-        const avgSalary =
-            totalEmployed > 0
-
-                ? Math.round(
-                    weightedSalary /
-                    totalEmployed
-                )
-
-                : 0;
-
-
-        res.json({
-
-            success: true,
-
-            summary: {
-
-                enrolled:
-                    totalEnrolled,
-
-                employed:
-                    totalEmployed,
-
-                placementRate,
-
-                avgSalary,
-
-                epfoVerified:
-                    totalEpfo,
-
-                whatsappVerified:
-                    totalWhatsapp
-
-            },
-
-            batches
-
-        });
+        }
 
     }
+);
 
-    catch (error) {
-
-        console.error(
-            "Training provider API error:",
-            error
-        );
-
-
-        res.status(500).json({
-
-            success: false,
-
-            error: error.message
-
-        });
-
-    }
-
-});
-
-app.get("/api/whatsapp-status", (req, res) => {
-
-    res.json({
-        success: true,
-        connected: whatsappReady,
-        status: whatsappReady
-            ? "connected"
-            : "disconnected"
-    });
-
-});
-
-// ================================
-// START WHATSAPP
-// ================================
-
-whatsappClient.initialize().catch((error) => {
-
-    console.error(
-        "WhatsApp initialization failed:",
-        error
-    );
-
-});
-
-// ================================
+// =====================================================
 // START SERVER
-// ================================
+// =====================================================
 
 app.listen(
     PORT,
@@ -1408,6 +2229,10 @@ app.listen(
 
         console.log(
             `SkillTrack server running on port ${PORT}`
+        );
+
+        console.log(
+            `WhatsApp Cloud API configured: ${whatsappConfigured}`
         );
 
         await initializeDatabase();
