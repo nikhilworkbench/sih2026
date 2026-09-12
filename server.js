@@ -5,6 +5,9 @@ const path = require("path");
 const fs = require("fs");
 const { Pool } = require("pg");
 
+const { Client, LocalAuth } = require("whatsapp-web.js");
+const qrcode = require("qrcode-terminal");
+
 const app = express();
 
 const PORT = process.env.PORT || 5000;
