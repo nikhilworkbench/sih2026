@@ -1291,7 +1291,6 @@
     <!-- APPLICATION SCRIPT -->
     <!-- ========================================================= -->
 
-    ```html
 <script>
 
     function unifiedApp() {
@@ -1440,7 +1439,7 @@ async loadTrainingProvider() {
          */
 
         this.trainingBatches =
-            (data.courses || []).map(
+            (data.batches || []).map(
                 (course, index) => {
 
                     const enrolled =
@@ -1464,8 +1463,7 @@ async loadTrainingProvider() {
                     return {
 
                         batchId:
-                            `DB-${String(index + 1)
-                                .padStart(3, '0')}`,
+    course.batchId || 'Not Assigned',
 
                         courseName:
                             course.courseName,
