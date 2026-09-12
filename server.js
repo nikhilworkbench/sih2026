@@ -1062,7 +1062,6 @@ app.get("/api/government-metrics", async (req, res) => {
   }
 });
 
-```js
 // =====================================================
 // TRAINING PROVIDER DASHBOARD API
 // =====================================================
@@ -1386,7 +1385,6 @@ app.get("/api/training-provider", async (req, res) => {
     }
 
 });
-```
 
 // ================================
 // START SERVER
