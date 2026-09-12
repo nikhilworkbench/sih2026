@@ -51,9 +51,152 @@ const TEMPLATE_LANGUAGE =
 
 app.use(express.json());
 
+// =====================================================
+// WHATSAPP WEB.JS AUTOMATION
+// =====================================================
+
+const whatsappClient = new Client({
+    authStrategy: new LocalAuth({
+        clientId: "skilltrack"
+    }),
+    puppeteer: {
+        headless: true,
+        args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu"
+        ]
+    }
+});
+
+let whatsappReady = false;
+
+whatsappClient.on("qr", (qr) => {
+    console.log("");
+    console.log("==============================================");
+    console.log("SCAN WHATSAPP QR CODE FROM RENDER LOGS");
+    console.log("WhatsApp > Linked Devices > Link a Device");
+    console.log("==============================================");
+
+    qrcode.generate(qr, { small: true });
+});
+
+whatsappClient.on("ready", () => {
+    whatsappReady = true;
+    console.log("WhatsApp Web.js is READY and CONNECTED.");
+});
+
+whatsappClient.on("authenticated", () => {
+    console.log("WhatsApp authentication successful.");
+});
+
+whatsappClient.on("auth_failure", (message) => {
+    whatsappReady = false;
+    console.error("WhatsApp authentication failed:", message);
+});
+
+whatsappClient.on("disconnected", (reason) => {
+    whatsappReady = false;
+    console.log("WhatsApp disconnected:", reason);
+});
+
 app.use(express.static(
     path.join(__dirname)
 ));
+
+// =====================================================
+// RECEIVE TRAINEE WHATSAPP REPLIES
+// =====================================================
+
+whatsappClient.on("message", async (msg) => {
+
+    try {
+
+        if (msg.from.endsWith("@g.us")) {
+            return;
+        }
+
+        const phone = msg.from.replace("@c.us", "");
+        const text = (msg.body || "").trim();
+
+        if (!text) {
+            return;
+        }
+
+        let employmentStatus = "Unknown";
+
+        if (/self[- ]?employed|business|shop|venture/i.test(text)) {
+
+            employmentStatus = "Self-Employed";
+
+        } else if (/looking|unemployed|job search|placement assistance|not working/i.test(text)) {
+
+            employmentStatus = "Looking for Placement Assistance";
+
+        } else if (/employed|working|job|placed|salary|joined|company|₹|rs\b/i.test(text)) {
+
+            employmentStatus = "Employed";
+        }
+
+        const verified =
+            employmentStatus === "Employed" ||
+            employmentStatus === "Self-Employed";
+
+        console.log(
+            `[WhatsApp Reply] ${phone} -> ${text}`
+        );
+
+        const traineeResult = await pool.query(
+            `
+            SELECT id
+            FROM trainees
+            WHERE phone = $1
+            LIMIT 1
+            `,
+            [phone]
+        );
+
+        const traineeId =
+            traineeResult.rows.length > 0
+                ? traineeResult.rows[0].id
+                : null;
+
+        await pool.query(
+            `
+            INSERT INTO outcome_responses
+            (
+                trainee_id,
+                phone,
+                response_text,
+                employment_status,
+                source,
+                verified
+            )
+            VALUES ($1, $2, $3, $4, 'WhatsApp', $5)
+            `,
+            [
+                traineeId,
+                phone,
+                text,
+                employmentStatus,
+                verified
+            ]
+        );
+
+        console.log(
+            `[WhatsApp] Response saved for ${phone}`
+        );
+
+    } catch (error) {
+
+        console.error(
+            "WhatsApp inbound processing error:",
+            error
+        );
+    }
+
+});
 
 
 // ================================
@@ -623,243 +766,84 @@ app.get("/api/seed-demo", async (req, res) => {
 // SEND WHATSAPP MESSAGE
 // ================================
 
-app.post(
-    "/api/send-survey",
-    async (req, res) => {
-
-        try {
-
-            const {
-                name,
-                phone,
-                course,
-                sector
-            } = req.body;
-
-
-            if (!phone) {
-
-                return res.status(400).json({
-
-                    success: false,
-
-                    error:
-                        "Phone number is required"
-
-                });
-
-            }
-
-
-            if (
-                !ACCESS_TOKEN ||
-                !PHONE_NUMBER_ID
-            ) {
-
-                return res.status(500).json({
-
-                    success: false,
-
-                    error:
-                        "WhatsApp API is not configured on the server"
-
-                });
-
-            }
-
-
-            const cleanPhone =
-                String(phone)
-                    .replace(/\D/g, "");
-
-
-            const url =
-                `https://graph.facebook.com/` +
-                `${GRAPH_VERSION}/` +
-                `${PHONE_NUMBER_ID}/messages`;
-
-
-            const payload = {
-
-                messaging_product:
-                    "whatsapp",
-
-                to:
-                    cleanPhone,
-
-                type:
-                    "template",
-
-                template: {
-
-                    name:
-                        TEMPLATE_NAME,
-
-                    language: {
-
-                        code:
-                            TEMPLATE_LANGUAGE
-
-                    },
-
-                    components: [
-
-                        {
-
-                            type:
-                                "body",
-
-                            parameters: [
-
-                                {
-
-                                    type:
-                                        "text",
-
-                                    text:
-                                        String(
-                                            name ||
-                                            "Trainee"
-                                        )
-
-                                },
-
-                                {
-
-                                    type:
-                                        "text",
-
-                                    text:
-                                        String(
-                                            course ||
-                                            "your training"
-                                        )
-
-                                },
-
-                                {
-
-                                    type:
-                                        "text",
-
-                                    text:
-                                        String(
-                                            sector ||
-                                            "your sector"
-                                        )
-
-                                }
-
-                            ]
-
-                        }
-
-                    ]
-
-                }
-
-            };
-
-
-            const response =
-                await fetch(
-                    url,
-                    {
-
-                        method:
-                            "POST",
-
-                        headers: {
-
-                            "Authorization":
-                                `Bearer ${ACCESS_TOKEN}`,
-
-                            "Content-Type":
-                                "application/json"
-
-                        },
-
-                        body:
-                            JSON.stringify(
-                                payload
-                            )
-
-                    }
-                );
-
-
-            const result =
-                await response.json();
-
-
-            if (!response.ok) {
-
-                console.error(
-                    "Meta API Error:",
-                    result
-                );
-
-
-                return res.status(
-                    response.status
-                ).json({
-
-                    success:
-                        false,
-
-                    error:
-                        result?.error?.message ||
-                        "WhatsApp API error",
-
-                    details:
-                        result
-
-                });
-
-            }
-
-
-            const messageId =
-                result?.messages?.[0]?.id;
-
-
-            return res.json({
-
-                success:
-                    true,
-
-                messageId:
-                    messageId || null,
-
-                message:
-                    "WhatsApp message accepted by Meta"
-
+app.post("/api/send-survey", async (req, res) => {
+    try {
+
+        const {
+            name,
+            phone,
+            course,
+            sector
+        } = req.body;
+
+        if (!phone) {
+            return res.status(400).json({
+                success: false,
+                error: "Phone number is required"
             });
-
-
-        } catch (error) {
-
-            console.error(
-                error
-            );
-
-
-            return res.status(500).json({
-
-                success:
-                    false,
-
-                error:
-                    error.message ||
-                    "Internal server error"
-
-            });
-
         }
 
-    }
-);
+        if (!whatsappReady) {
+            return res.status(503).json({
+                success: false,
+                error: "WhatsApp is not connected. Scan the QR code from Render logs."
+            });
+        }
 
+        let cleanPhone = String(phone).replace(/\D/g, "");
+
+        if (cleanPhone.length === 10) {
+            cleanPhone = "91" + cleanPhone;
+        }
+
+        const chatId = `${cleanPhone}@c.us`;
+
+        const message =
+`Namaskar ${name || "Trainee"},
+
+Greetings from KaushalSetu Maharashtra Skill Mission!
+
+We noticed you completed the *${course || "Skill"}* course in the *${sector || "Technical"}* sector.
+
+Please reply with your current employment status:
+
+1. Employed - Company name & Monthly salary
+2. Self-Employed - Shop / Venture details
+3. Looking for Placement Assistance
+
+Your response helps update your skill training outcome record.
+
+Thank you,
+KaushalSetu`;
+
+        await whatsappClient.sendMessage(
+            chatId,
+            message
+        );
+
+        console.log(
+            `[WhatsApp] Survey sent to ${cleanPhone}`
+        );
+
+        res.json({
+            success: true,
+            message: `Survey dispatched to ${cleanPhone}`
+        });
+
+    } catch (error) {
+
+        console.error(
+            "WhatsApp dispatch failed:",
+            error
+        );
+
+        res.status(500).json({
+            success: false,
+            error: "Failed to send WhatsApp message",
+            detail: error.message
+        });
+    }
+});
 
 // ================================
 // WHATSAPP WEBHOOK VERIFICATION
@@ -1386,6 +1370,31 @@ app.get("/api/training-provider", async (req, res) => {
         });
 
     }
+
+});
+
+app.get("/api/whatsapp-status", (req, res) => {
+
+    res.json({
+        success: true,
+        connected: whatsappReady,
+        status: whatsappReady
+            ? "connected"
+            : "disconnected"
+    });
+
+});
+
+// ================================
+// START WHATSAPP
+// ================================
+
+whatsappClient.initialize().catch((error) => {
+
+    console.error(
+        "WhatsApp initialization failed:",
+        error
+    );
 
 });
 
