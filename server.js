@@ -1082,9 +1082,9 @@ app.get("/api/training-provider", async (req, res) => {
 
             params.push(centerId);
 
-            whereClause = 
+            whereClause = `
                 WHERE tc.center_id = $1
-            ;
+            `;
 
         }
 
