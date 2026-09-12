@@ -121,11 +121,6 @@
                             class="px-3.5 py-2 rounded-md text-xs md:text-sm font-semibold transition">
                         <i class="fa-solid fa-school mr-1.5"></i> Training Provider
                     </button>
-                    <button @click="activeTab = 'employer'"
-                            :class="activeTab === 'employer' ? 'bg-[#8B0000] text-white shadow-sm' : 'text-gray-700 hover:bg-white hover:text-[#8B0000]'"
-                            class="px-3.5 py-2 rounded-md text-xs md:text-sm font-semibold transition">
-                        <i class="fa-solid fa-briefcase mr-1.5"></i> Employer Portal
-                    </button>
                 </div>
             </div>
         </div>
@@ -516,99 +511,6 @@
             </div>
 
         </div>
-
-        <!-- ========================================== -->
-        <!-- VIEW 5: EMPLOYER PORTAL -->
-        <!-- ========================================== -->
-        <div x-show="activeTab === 'employer'" class="space-y-6" style="display: none;">
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
-                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 border-b pb-4">
-                    <div>
-                        <h2 class="text-xl font-bold text-gray-900 flex items-center gap-2">
-                            <i class="fa-solid fa-briefcase text-[#8B0000]"></i>
-                            Employer Skill Requirement Signal
-                        </h2>
-                        <p class="text-xs text-gray-500 mt-1">
-                            Inform state skill missions of hiring requirements to align upcoming training batches.
-                        </p>
-                    </div>
-                    <span class="text-xs bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg font-semibold border border-indigo-100">
-                        <i class="fa-solid fa-chart-line mr-1"></i> Demand Intelligence
-                    </span>
-                </div>
-
-                <form @submit.prevent="submitEmployerDemand" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Company</label>
-                        <input type="text" x-model="employerForm.company" required
-                               class="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Job Role</label>
-                        <input type="text" x-model="employerForm.role" required placeholder="e.g. EV Battery Technician"
-                               class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Open Positions</label>
-                        <input type="number" min="1" x-model="employerForm.openings" required placeholder="50"
-                               class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Target District</label>
-                        <select x-model="employerForm.district" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white focus:ring-2 focus:ring-indigo-500 outline-none">
-                            <option>Pune / Pimpri-Chinchwad</option>
-                            <option>Nashik</option>
-                            <option>Nagpur</option>
-                            <option>Aurangabad</option>
-                            <option>Thane</option>
-                        </select>
-                    </div>
-                    <div class="md:col-span-2 pt-2 flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-                        <button type="submit" class="bg-[#8B0000] hover:bg-[#700000] text-white font-bold text-sm px-6 py-2.5 rounded-lg transition shadow-sm">
-                            <i class="fa-solid fa-paper-plane mr-1.5"></i> Submit Demand Signal
-                        </button>
-                        <span class="text-xs text-gray-500">
-                            <i class="fa-solid fa-circle-info mr-1"></i>
-                            Demand is captured for this live demonstration.
-                        </span>
-                    </div>
-                </form>
-            </div>
-
-            <div x-show="submittedDemands.length > 0" class="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
-                <div class="flex items-center justify-between mb-4">
-                    <div>
-                        <h3 class="font-bold text-gray-800">Submitted Hiring Signals</h3>
-                        <p class="text-xs text-gray-500">Latest employer requirements captured in this session.</p>
-                    </div>
-                    <span class="text-xs bg-gray-100 text-gray-700 px-2.5 py-1 rounded-full font-bold"
-                          x-text="submittedDemands.length + ' Submitted'"></span>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left text-sm min-w-[650px]">
-                        <thead class="bg-gray-100 text-gray-700 uppercase text-xs">
-                            <tr>
-                                <th class="py-3 px-4">Company</th>
-                                <th class="py-3 px-4">Role</th>
-                                <th class="py-3 px-4">Openings</th>
-                                <th class="py-3 px-4">District</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100">
-                            <template x-for="(demand, index) in submittedDemands" :key="index">
-                                <tr>
-                                    <td class="py-3 px-4 font-semibold text-gray-900" x-text="demand.company"></td>
-                                    <td class="py-3 px-4" x-text="demand.role"></td>
-                                    <td class="py-3 px-4 font-bold text-indigo-700" x-text="demand.openings"></td>
-                                    <td class="py-3 px-4 text-gray-600" x-text="demand.district"></td>
-                                </tr>
-                            </template>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
 </main>
 
     <!-- Application Script -->
